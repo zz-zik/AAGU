@@ -172,3 +172,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+/configs/
+/dataloader/
+/examples/
+/utils/
+/.gitignore
+/LICENSE
+/README.md

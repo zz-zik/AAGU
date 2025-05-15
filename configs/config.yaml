@@ -1,0 +1,54 @@
+name: 'train'
+device: 'cuda:1'
+seed: 42
+output_dir: ./work_dirs
+num_workers: 8
+resume: null  # 如果存在，则恢复训练
+
+data:
+  data_root: ./dataset/OdinMJ
+  data_format: 'default'  # [default, custom]
+  label_format: 'coco'  # [yolo, coco]
+  labels: [People"]  # 类别列表, 默认从0开始
+  transforms:
+    random_flip: 0.0
+    random_rotation: 0.0
+    random_resize: 0.0
+    color_jitter: 0.0
+    gamma_correction: 0.0
+    random_erase: 0.0
+    blur_sigma: 0.0
+
+model:
+  num_classes: 1
+  backbone_name: "resnet50"  # ['swin_base_patch4_window7_224', 'resnet50']
+
+loss:
+
+
+logger:
+  log_name: 'Seg_log'
+  level: 'INFO'
+
+training:
+  start_epoch: 1
+  epochs: 200
+  scheduler: 'step'  # [step, plateau]
+  lr: 0.0001
+  lr_backbone: 0.00001
+  lr_drop: 200
+  batch_size: 8
+  eval_freq: 1
+  start_eval: 1
+  threshold: 0.5
+
+test:
+  img_dirs: './data'
+  batch_size: 1
+  threshold: 0.5
+  device: 'cuda:1'
+  save_dir: "./work_dirs"
+  name: "test"
+  weight_path: "./work_dirs/train_3/checkpoints/best_iou.pth"
+  show: True
+  show_overlay: False
