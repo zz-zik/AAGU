@@ -10,7 +10,7 @@
 """
 from torch import nn
 from models import build_backbone
-from models.encder import CenterHead, AAGF
+from models.encoder import CenterHead, AAGF
 
 __all__ = ['Encoder']
 

@@ -1,2 +1,2 @@
 from .backbone import build_backbone
-from .encder import Encoder
+from .encoder import Encoder
