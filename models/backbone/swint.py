@@ -11,14 +11,16 @@
 from timm import create_model
 from torch import nn
 
+__all__ = ['SwinT']
 
-class VisualEncoder(nn.Module):
+
+class SwinT(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         # 使用Swin Transformer作为视觉编码器
-        self.backbone = create_model(model_name=cfg.model.backbone_name, features_only=True, out_indices=[0, 1, 2, 3],
+        self.backbone = create_model(model_name='swin_base_patch4_window7_224', features_only=True, out_indices=[0, 1, 2, 3],
                                      pretrained=cfg.model.pretrained, img_size=cfg.model.img_size)
-        self.out_dims = cfg.model.out_dims
+        self.out_dims = [96, 192, 384, 768]
 
     def forward(self, x):
         """
@@ -37,10 +39,10 @@ if __name__ == '__main__':
     import torch
     from utils import load_config
 
-    cfg = load_config('../configs/config.yaml')
+    cfg = load_config('../../configs/config.yaml')
     # 测试Swin Transformer
-    model_swin = VisualEncoder(cfg)
-    x = torch.randn(2, 3, 512, 512)  # 示例输入：2张3通道512x512的图像
+    model_swin = SwinT(cfg)
+    x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x512的图像
     feats_swin = model_swin(x)
     print("Swin Transformer Features:")
     for i, feat in enumerate(feats_swin):

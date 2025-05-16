@@ -21,7 +21,11 @@ data:
 
 model:
   num_classes: 1
-  backbone_name: "resnet50"  # ['swin_base_patch4_window7_224', 'resnet50']
+  backbone_name: "swint"  # ['swint', 'resnet50', 'hgnetv2']
+  pretrained: True  # 是否使用BackBone预训练权重
+  img_size: [512, 640]
+  out_dims: [256, 256, 256, 256]
+
 
 loss:
 

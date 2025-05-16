@@ -9,14 +9,20 @@
 @Usage   :
 """
 from torch import nn
-from torchvision.models import resnet50
+from torchvision.models import resnet50, ResNet50_Weights
+
+__all__ = ['ResNet50']
 
 
 class ResNet50(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         # 使用ResNet50作为视觉编码器
-        self.backbone = resnet50(pretrained=cfg.model.pretrained)
+        if cfg.model.pretrained:
+            weights = ResNet50_Weights.DEFAULT
+        else:
+            weights = None
+        self.backbone = resnet50(resnet50(weights=weights))
         # 获取ResNet50的各层输出维度
         self.out_dims = [64, 256, 512, 1024, 2048]
 
@@ -51,9 +57,9 @@ if __name__ == '__main__':
     import torch
     from utils import load_config
 
-    cfg = load_config('../configs/config.yaml')
+    cfg = load_config('../../configs/config.yaml')
 
-    x = torch.randn(2, 3, 512, 512)  # 示例输入：2张3通道512x512的图像
+    x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x512的图像
 
     # 测试ResNet50
     model_resnet = ResNet50(cfg)
@@ -67,4 +73,3 @@ if __name__ == '__main__':
 
     flops_resnet, params_resnet = profile(model_resnet, inputs=(x,))
     print(f"ResNet50 Backbone FLOPs: {flops_resnet / 1e9:.2f} G, Params: {params_resnet / 1e6:.2f} M")
-
