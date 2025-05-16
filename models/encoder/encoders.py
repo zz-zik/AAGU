@@ -12,6 +12,7 @@ from torch import nn
 from models import build_backbone
 from models.encoder import CenterHead, AAGF
 
+
 __all__ = ['Encoder']
 
 

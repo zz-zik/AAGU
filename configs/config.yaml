@@ -21,7 +21,7 @@ data:
 
 model:
   num_classes: 1
-  backbone_name: "swint"  # ['swint', 'resnet50', 'hgnetv2']
+  backbone_name: "hgnetv2"  # ['swint', 'resnet50', 'hgnetv2']
   pretrained: True  # 是否使用BackBone预训练权重
   img_size: [512, 640]
   out_dims: [256, 256, 256, 256]
