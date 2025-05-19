@@ -384,21 +384,29 @@ def collate_fn(batch):
 
 # 定义一个安全的 collate_fn
 def collate_fn_crowds(batch):
-    batch_rgb = []
-    batch_tir = []
-    batch_targets = []
+    batch_new = []
+    targets = []
 
-    for item in batch:
-        rgb, tir, target = item
-        batch_rgb.append(rgb)
-        batch_tir.append(tir)
-        batch_targets.append(target)
+    for b in batch:
+        img_rgb, img_tir, target = b
 
-    # 对图像使用 nested_tensor_from_tensor_list
-    batch_rgb = nested_tensor_from_tensor_list(batch_rgb)  # RGB 图像
-    batch_tir = nested_tensor_from_tensor_list(batch_tir)  # TIR 图像
+        if img_rgb.ndim == 3:
+            img_rgb = img_rgb.unsqueeze(0)
+        if img_tir.ndim == 3:
+            img_tir = img_tir.unsqueeze(0)
 
-    return batch_rgb, batch_tir, batch_targets
+        # 处理每个样本
+        for i in range(img_rgb.shape[0]):
+            batch_new.append((img_rgb[i], img_tir[i]))
+            targets.append(target)
+
+    # 组装成 (rgb_list, tir_list), targets
+    rgb_list, tir_list = zip(*batch_new)
+    rgb_tensor = nested_tensor_from_tensor_list(rgb_list)
+    tir_tensor = nested_tensor_from_tensor_list(tir_list)
+
+    return rgb_tensor, tir_tensor, targets
+
 
 def _max_by_axis(the_list):
     # type: (List[List[int]]) -> List[int]

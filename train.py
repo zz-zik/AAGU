@@ -7,7 +7,7 @@
 @Email   : zhoufei.net@gmail.com
 @Desc    : 
 @Usage   :
-# """
+"""
 # from engine import train
 # from utils import load_config, get_output_dir, setup_logging
 # # 启动训练
@@ -33,15 +33,19 @@ if __name__ == "__main__":
     # 遍历训练数据加载器
     print("Training data:")
     for i, (rgb_images, tir_images, targets) in enumerate(data_loader_train):
-        print(f"Batch {i + 1}:")
+        print(f"Train Batch {i+1}/{len(data_loader_train)}:")
         print("RGB images shape:", rgb_images.shape)
         print("TIR images shape:", tir_images.shape)
         print("Targets:", targets)
+        if i >= 10:  # 只检查前10个样本
+            break
 
-    # 遍历验证数据加载器
-    print("\nValidation data:")
-    for i, (rgb_images, tir_images, targets) in enumerate(data_loader_val):
-        print(f"Batch {i + 1}:")
-        print("RGB images shape:", rgb_images.shape)
-        print("TIR images shape:", tir_images.shape)
-        print("Targets:", targets)
+    # # 遍历验证数据加载器
+    # print("\nValidation data:")
+    # for i, (rgb_images, tir_images, targets) in enumerate(data_loader_val):
+    #     print(f"Val Batch {i + 1}:")
+    #     print("RGB images shape:", rgb_images.shape)
+    #     print("TIR images shape:", tir_images.shape)
+    #     print("Targets:", targets)
+    #     if i >= 10:  # 只检查前10个样本
+    #         break

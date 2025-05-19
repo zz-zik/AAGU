@@ -1,8 +1,8 @@
 name: 'train'
-device: 'cuda:1'
+device: 'cuda:0'
 seed: 42
 output_dir: ./work_dirs
-num_workers: 8
+num_workers: 4
 resume: null  # 如果存在，则恢复训练
 
 data:

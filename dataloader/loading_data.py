@@ -24,7 +24,6 @@ class DeNormalize(object):
 
 
 def loading_data(cfg):
-
     transforms_train = Transforms(**cfg.data.transforms.to_dict())
     transforms_val = Transforms(train=False, **cfg.data.transforms.to_dict())
     train_dataset = Crowds(transform=transforms_train, train=True, **cfg.data.to_dict())
@@ -44,8 +43,10 @@ if __name__ == '__main__':
     print('训练集样本数：', len(train_dataset))
     print('测试集样本数：', len(val_dataset))
 
-    for img_rgb, img_tir, label in train_dataset:
-        print('训练集第1个样本rgb图像形状：', img_rgb.shape, 'tir图像形状：', img_tir.shape, '标注形状：', label)
+    for i, (img_rgb, img_tir, label) in enumerate(train_dataset):
+        print('训练集第', i, '个样本rgb图像形状：', img_rgb.shape, 'tir图像形状：', img_tir.shape, '标注形状：', label)
+        if i == 5:
+            break
 
     img_rgb, img_tir, label = val_dataset[0]
     print('训练集第1个样本rgb图像形状：', img_rgb.shape, 'tir图像形状：', img_tir.shape, '标注形状：', label)
