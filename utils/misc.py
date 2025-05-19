@@ -62,6 +62,7 @@ class Config:
                 result[k] = v
         return result
 
+
 def load_config(config_path):
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
@@ -381,32 +382,23 @@ def collate_fn(batch):
     return tuple(batch)
 
 
+# 定义一个安全的 collate_fn
 def collate_fn_crowds(batch):
-    # 初始化批次列表
-    rgbs_batch = []
-    tirs_batch = []
-    targets_batch = []
+    batch_rgb = []
+    batch_tir = []
+    batch_targets = []
 
     for item in batch:
-        rgbs, tirs, targets = item
+        rgb, tir, target = item
+        batch_rgb.append(rgb)
+        batch_tir.append(tir)
+        batch_targets.append(target)
 
-        # 确保图像张量的维度是 [C, H, W]
-        if rgbs.ndim == 3:
-            rgbs = rgbs.unsqueeze(0)  # 将单个图像转换为形状为 [1, C, H, W]
-        if tirs.ndim == 3:
-            tirs = tirs.unsqueeze(0)  # 将单个图像转换为形状为 [1, C, H, W]
+    # 对图像使用 nested_tensor_from_tensor_list
+    batch_rgb = nested_tensor_from_tensor_list(batch_rgb)  # RGB 图像
+    batch_tir = nested_tensor_from_tensor_list(batch_tir)  # TIR 图像
 
-        # 将图像和目标添加到批次列表中
-        rgbs_batch.append(rgbs)
-        tirs_batch.append(tirs)
-        targets_batch.append(targets)
-
-    # 将图像张量列表转换为嵌套张量
-    rgbs_batch = nested_tensor_from_tensor_list(rgbs_batch)
-    tirs_batch = nested_tensor_from_tensor_list(tirs_batch)
-
-    return rgbs_batch, tirs_batch, targets_batch
-
+    return batch_rgb, batch_tir, batch_targets
 
 def _max_by_axis(the_list):
     # type: (List[List[int]]) -> List[int]

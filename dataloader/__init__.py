@@ -16,12 +16,12 @@ def build_dataset(cfg):
         sampler_train, cfg.training.batch_size, drop_last=True)
     # DataLoader for training
     data_loader_train = DataLoader(train_set, batch_sampler=batch_sampler_train,
-                                   collate_fn=collate_fn_crowds, num_workers=cfg.num_workers)
+                                   collate_fn=collate_fn_crowds, num_workers=cfg.num_workers, multiprocessing_context="spawn",)
     data_loader_val = DataLoader(val_set, 1, sampler=sampler_val,
-                                 collate_fn=collate_fn_crowds, num_workers=cfg.num_workers)
+                                 collate_fn=collate_fn_crowds, num_workers=cfg.num_workers, multiprocessing_context="spawn",)
     # Log dataset scanning results
     logging.info("------------------------ preprocess dataset ------------------------")
-    logging.info("Data_path: %s", cfg.data_root)
-    logging.info("Data offset:\n %s", cfg.data)
+    logging.info("Data_path: %s", cfg.data.data_root)
+    logging.info("Data Transforms:\n %s", cfg.data.transforms)
     logging.info(f"# Train {train_set.nSamples}, Val {val_set.nSamples}")
     return data_loader_train, data_loader_val

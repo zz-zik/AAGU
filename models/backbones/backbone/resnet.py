@@ -57,7 +57,7 @@ if __name__ == '__main__':
     import torch
     from utils import load_config
 
-    cfg = load_config('../../configs/config.yaml')
+    cfg = load_config('../../../configs/config.yaml')
 
     x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x512的图像
 

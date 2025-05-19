@@ -44,8 +44,8 @@ if __name__ == '__main__':
     print('训练集样本数：', len(train_dataset))
     print('测试集样本数：', len(val_dataset))
 
-    img_rgb, img_tir, label = train_dataset[0]
-    print('训练集第1个样本rgb图像形状：', img_rgb.shape, 'tir图像形状：', img_tir.shape, '标注形状：', label)
+    for img_rgb, img_tir, label in train_dataset:
+        print('训练集第1个样本rgb图像形状：', img_rgb.shape, 'tir图像形状：', img_tir.shape, '标注形状：', label)
 
     img_rgb, img_tir, label = val_dataset[0]
     print('训练集第1个样本rgb图像形状：', img_rgb.shape, 'tir图像形状：', img_tir.shape, '标注形状：', label)

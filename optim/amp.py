@@ -3,8 +3,9 @@ Copied from RT-DETR (https://github.com/lyuwenyu/RT-DETR)
 Copyright(c) 2023 lyuwenyu. All Rights Reserved.
 """
 
-import torch.nn as nn
+import torch.cuda.amp as amp
 
-from .det_criterion import DetCriterion
+__all__ = ["GradScaler"]
 
-CrossEntropyLoss = nn.CrossEntropyLoss
+GradScaler = amp.grad_scaler.GradScaler
+

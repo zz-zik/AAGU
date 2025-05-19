@@ -8,17 +8,11 @@ import torch.distributed
 import torch.nn.functional as F
 import torchvision
 
-from ...core import register
-from ...misc import box_ops, dist_utils
+from models.misc import dist_utils, box_ops
 
 
-@register()
 class DetCriterion(torch.nn.Module):
     """Default Detection Criterion"""
-
-    __share__ = ["num_classes"]
-    __inject__ = ["matcher"]
-
     def __init__(
         self,
         losses,
@@ -57,7 +51,7 @@ class DetCriterion(torch.nn.Module):
             losses, Dict[str, Tensor]
         """
         matched = self.matcher(outputs, targets)
-        values = matched["values"]
+        # values = matched["values"]
         indices = matched["indices"]
         num_boxes = self._get_positive_nums(indices)
 
