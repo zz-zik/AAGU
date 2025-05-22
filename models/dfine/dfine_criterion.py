@@ -1,10 +1,8 @@
 """
-D-FINE: Redefine Regression Task of DETRs as Fine-grained Distribution Refinement
-Copyright (c) 2024 The D-FINE Authors. All Rights Reserved.
----------------------------------------------------------------------------------
-Modified from RT-DETR (https://github.com/lyuwenyu/RT-DETR)
-Copyright (c) 2023 lyuwenyu. All Rights Reserved.
+Copied from RT-DETR (https://github.com/lyuwenyu/RT-DETR)
+Copyright(c) 2023 lyuwenyu. All Rights Reserved.
 """
+
 
 import copy
 
@@ -14,38 +12,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 
-from .box_ops import box_cxcywh_to_xyxy, box_iou, generalized_box_iou
-from .dfine_utils import bbox2distance
-
-
-def get_world_size():
-    if not is_dist_available_and_initialized():
-        return 1
-    return torch.distributed.get_world_size()
-
-
-def is_dist_available_and_initialized():
-    if not torch.distributed.is_available():
-        return False
-    if not torch.distributed.is_initialized():
-        return False
-    return True
+from models.misc import get_world_size, is_dist_available_and_initialized
+from ..dfine.box_ops import box_cxcywh_to_xyxy, box_iou, generalized_box_iou
+from ..dfine.dfine_utils import bbox2distance
 
 
 class DFINECriterion(nn.Module):
     """This class computes the loss for D-FINE."""
 
     def __init__(
-            self,
-            matcher,
-            weight_dict,
-            losses,
-            alpha=0.2,
-            gamma=2.0,
-            num_classes=80,
-            reg_max=32,
-            boxes_weight_format=None,
-            share_matched_indices=False,
+        self,
+        matcher,
+        weight_dict,
+        losses,
+        alpha=0.2,
+        gamma=2.0,
+        num_classes=80,
+        reg_max=32,
+        boxes_weight_format=None,
+        share_matched_indices=False,
     ):
         """Create the criterion.
         Parameters:
@@ -79,7 +64,7 @@ class DFINECriterion(nn.Module):
             src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
         )
         target_classes[idx] = target_classes_o
-        target = F.one_hot(target_classes, num_classes=self.num_classes + 1)[..., :-1]
+        target = F.one_hot(target_classes, num_classes=self.num_classes + 1)[..., :-1].float()
         loss = torchvision.ops.sigmoid_focal_loss(
             src_logits, target, self.alpha, self.gamma, reduction="none"
         )
@@ -209,18 +194,18 @@ class DFINECriterion(nn.Module):
                     )
 
                     loss_match_local = (
-                            weight_targets_local
-                            * (T ** 2)
-                            * (
-                                nn.KLDivLoss(reduction="none")(
-                                    F.log_softmax(pred_corners / T, dim=1),
-                                    F.softmax(target_corners.detach() / T, dim=1),
-                                )
-                            ).sum(-1)
+                        weight_targets_local
+                        * (T**2)
+                        * (
+                            nn.KLDivLoss(reduction="none")(
+                                F.log_softmax(pred_corners / T, dim=1),
+                                F.softmax(target_corners.detach() / T, dim=1),
+                            )
+                        ).sum(-1)
                     )
                     if "is_dn" not in outputs:
                         batch_scale = (
-                                8 / outputs["pred_boxes"].shape[0]
+                            8 / outputs["pred_boxes"].shape[0]
                         )  # Avoid the influence of batch size per GPU
                         self.num_pos, self.num_neg = (
                             (mask.sum() * batch_scale) ** 0.5,
@@ -229,8 +214,8 @@ class DFINECriterion(nn.Module):
                     loss_match_local1 = loss_match_local[mask].mean() if mask.any() else 0
                     loss_match_local2 = loss_match_local[~mask].mean() if (~mask).any() else 0
                     losses["loss_ddf"] = (
-                                                 loss_match_local1 * self.num_pos + loss_match_local2 * self.num_neg
-                                         ) / (self.num_pos + self.num_neg)
+                        loss_match_local1 * self.num_pos + loss_match_local2 * self.num_neg
+                    ) / (self.num_pos + self.num_neg)
 
         return losses
 
@@ -372,7 +357,7 @@ class DFINECriterion(nn.Module):
                 l_dict = {k + "_pre": v for k, v in l_dict.items()}
                 losses.update(l_dict)
 
-        # In case of backbones auxiliary losses.
+        # In case of encoder auxiliary losses.
         if "enc_aux_outputs" in outputs:
             assert "enc_meta" in outputs, ""
             class_agnostic = outputs["enc_meta"]["class_agnostic"]
@@ -500,7 +485,7 @@ class DFINECriterion(nn.Module):
         return torch.abs(loss)
 
     def unimodal_distribution_focal_loss(
-            self, pred, label, weight_right, weight_left, weight=None, reduction="sum", avg_factor=None
+        self, pred, label, weight_right, weight_left, weight=None, reduction="sum", avg_factor=None
     ):
         dis_left = label.long()
         dis_right = dis_left + 1

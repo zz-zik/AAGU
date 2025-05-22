@@ -8,7 +8,7 @@
 @Desc    : 
 @Usage   :
 """
-from engine import train
+from engine import training
 from utils import load_config
 import os
 
@@ -17,7 +17,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 def main():
     cfg = load_config('./configs/config.yaml')
-    train(cfg)
+    training(cfg)
 
 
 def data_loader_test():

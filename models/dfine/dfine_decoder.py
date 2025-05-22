@@ -896,7 +896,8 @@ class DFINETransformer(nn.Module):
         else:
             out = {"pred_logits": out_logits[-1], "pred_boxes": out_bboxes[-1]}
 
-        if self.training and self.aux_loss:
+        # if self.training and self.aux_loss:
+        if self.aux_loss:
             out["aux_outputs"] = self._set_aux_loss2(
                 out_logits[:-1],
                 out_bboxes[:-1],

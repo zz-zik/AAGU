@@ -19,9 +19,10 @@ from torchvision.transforms import functional as F, Compose, Normalize
 class Transforms(nn.Module):
     """根据配置参数动态选择和组合数据增强操作"""
 
-    def __init__(self, train=True, **kwargs):
+    def __init__(self, train=True, box_fmt='xyxy', **kwargs):
         super().__init__()
         self.train = train
+        self.box_fmt = box_fmt
 
         # 定义标准化变换
         self.rgb_transform = Compose([
@@ -72,28 +73,36 @@ class Transforms(nn.Module):
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
         """应用数据增强操作
-
         Args:
             rgb (torch.Tensor): RGB 图像
             tir (torch.Tensor): TIR 图像
             target (Dict[str, Any]): 目标数据
-
         Returns:
             Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]: 增强后的 RGB 图像、TIR 图像和目标数据
         """
+        if not isinstance(rgb, torch.Tensor) and not isinstance(tir, torch.Tensor):
+            rgb = torch.from_numpy(rgb).permute(2, 0, 1).float()
+            tir = torch.from_numpy(tir).permute(2, 0, 1).float()
+
+        # 如果是 cxcywh 格式，先转换成 xyxy 以便统一处理
+        original_boxes = target["boxes"]
+        if self.box_fmt == 'cxcywh':
+            boxes_xyxy = cxcywh_to_xyxy(original_boxes)
+            target["boxes"] = boxes_xyxy
+
         # 应用数据增强操作
         if self.train:
             for transform in self.transforms:
                 rgb, tir, target = transform(rgb, tir, target)
 
-        # 判断rgb和tir的格式是否是tensor格式,如果不是，则转换为tensor
-        if not isinstance(rgb, torch.Tensor) and not isinstance(tir, torch.Tensor):
-            rgb = torch.from_numpy(rgb).permute(2, 0, 1).float()
-            tir = torch.from_numpy(tir).permute(2, 0, 1).float()
+        # 恢复原始的 box_fmt 格式（如 cxcywh）
+        if self.box_fmt == 'cxcywh':
+            target["boxes"] = xyxy_to_cxcywh(target["boxes"])
 
         # 应用标准化变换
         rgb = self.rgb_transform(rgb)
         tir = self.tir_transform(tir)
+
         return rgb, tir, target
 
 
@@ -356,6 +365,24 @@ class GaussianBlur(nn.Module):
             rgb = F.gaussian_blur(rgb, kernel_size=self.kernel_size, sigma=sigma)
         return rgb, tir, target
 
+
+def cxcywh_to_xyxy(boxes: torch.Tensor) -> torch.Tensor:
+    """将 [cx, cy, w, h] 转换为 [x1, y1, x2, y2]"""
+    cx, cy, w, h = boxes.unbind(dim=-1)
+    x1 = cx - w / 2
+    y1 = cy - h / 2
+    x2 = cx + w / 2
+    y2 = cy + h / 2
+    return torch.stack([x1, y1, x2, y2], dim=-1)
+
+def xyxy_to_cxcywh(boxes: torch.Tensor) -> torch.Tensor:
+    """将 [x1, y1, x2, y2] 转换为 [cx, cy, w, h]"""
+    x1, y1, x2, y2 = boxes.unbind(dim=-1)
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    w = x2 - x1
+    h = y2 - y1
+    return torch.stack([cx, cy, w, h], dim=-1)
 
 if __name__ == "__main__":
     # 创建示例输入数据

@@ -179,7 +179,6 @@ class DetCriterion(torch.nn.Module):
     #     losses["loss_giou"] = loss_giou.sum() / num_boxes
     #     return losses
 
-
     def loss_boxes_giou(self, outputs, targets, indices, num_boxes):
         assert "pred_boxes" in outputs
         idx = self._get_src_permutation_idx(indices)

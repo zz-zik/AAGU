@@ -11,14 +11,12 @@ import torch.nn.functional as F
 import torchvision
 from torch import Tensor
 
-from ...core import register
 
 __all__ = [
     "DetNMSPostProcessor",
 ]
 
 
-@register()
 class DetNMSPostProcessor(torch.nn.Module):
     def __init__(
         self,

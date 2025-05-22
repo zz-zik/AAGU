@@ -9,6 +9,7 @@ __all__ = [
 ]
 
 from models import BackBones
+from models.backbones.backbone import build_backbone
 from models.dfine import HybridEncoder, DFINETransformer
 
 
@@ -17,6 +18,7 @@ class DFINE(nn.Module):
         super().__init__()
         self.backbone = BackBones(cfg, cfg.model.backbone_name, cfg.model.out_dims, cfg.model.aagf.roi_sizes,
                                   cfg.model.aagf.use_confidence, cfg.model.aagf.use_attention, cfg.model.aagf.use_similarity)
+        # self.backbone = build_backbone(cfg)
         self.encoder = HybridEncoder(in_channels=cfg.model.out_dims, feat_strides=[8, 16, 32])
         self.decoder = DFINETransformer(num_classes=cfg.model.num_classes, feat_channels=[256, 256, 256])
 
@@ -49,11 +51,11 @@ if __name__ == "__main__":
     tir = torch.randn(2, 3, 512, 640)
     targets = [
     {
-        "labels": torch.tensor([1, 2]),              # 第一张图的类别标签
+        "labels": torch.tensor([0, 0]),              # 第一张图的类别标签
         "boxes": torch.tensor([[0.1, 0.1, 0.3, 0.3], [0.5, 0.5, 0.7, 0.7]]),
     },
     {
-        "labels": torch.tensor([3]),                 # 第二张图的类别标签
+        "labels": torch.tensor([0]),                 # 第二张图的类别标签
         "boxes": torch.tensor([[0.2, 0.2, 0.4, 0.4]]),
     }
     ]

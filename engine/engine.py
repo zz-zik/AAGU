@@ -1,361 +1,427 @@
 # -*- coding: utf-8 -*-
 """
 @Project : AAGU
-@FileName: engine.py
-@Time    : 2025/5/19 下午2:14
+@FileName: train_engine.py
+@Time    : 2025/5/21 下午4:01
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
 @Desc    : 训练引擎
-@Usage   :
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
+@Usage   : pycocotools
 """
-import os
-import time
-import logging
-from collections import defaultdict
-from datetime import datetime
-import torch
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-from models import DFINE, build_model
-import pandas as pd
+# -*- coding: utf-8 -*-
+"""
+@Project : AAGU
+@FileName: train_engine.py
+@Time    : 2025/5/21 下午4:01
+@Author  : ZhouFei
+@Email   : zhoufei.net@gmail.com
+@Desc    : 训练引擎 - 参考D-FINE实现
+@Usage   : pycocotools
+"""
+import math
+import sys
 
 import numpy as np
-import torch.nn.functional as F
-from torchvision.ops import box_iou
-
-from utils import setup_logging, get_output_dir
+import torch
+from tqdm import tqdm
 
 
-class TrainingEngine:
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.resume = cfg.resume
-        self.output_dir = get_output_dir(cfg.output_dir, cfg.name)
-        self.logger = setup_logging(cfg, self.output_dir)
-        # 构建模型和损失函数
-        self.model, self.criterion = build_model(cfg, training=True)
-        self.device = cfg.device
-        self.model_dir = os.path.join(cfg.output_dir, "checkpoints")
-        os.makedirs(self.model_dir, exist_ok=True)
-        self.model.to(self.device)
+# 你需要从D-FINE或类似库中导入这些组件
+# from ..data import CocoEvaluator
+# from ..misc import MetricLogger, SmoothedValue, dist_utils
+# from .validator import Validator, scale_boxes
 
-        # 对模型的不同部分使用不同的优化参数
-        param_dicts = [
-            {
-                "params": [p for n, p in self.model.named_parameters() if "backbone" not in n and p.requires_grad],
-                "lr": cfg.training.lr
-            },
-            {
-                "params": [p for n, p in self.model.named_parameters() if "backbone" in n and p.requires_grad],
-                "lr": cfg.training.lr_backbone,
-            }
-        ]
-        self.optimizer = torch.optim.AdamW(param_dicts, lr=cfg.training.lr)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer, step_size=cfg.training.step_size, gamma=cfg.training.gamma
-        )
 
-        # 用于恢复训练的状态变量
-        self.start_epoch = cfg.training.start_epoch
-        self.best_val_loss = float("inf")
+def compute_iou(box1, box2):
+    """计算两个box的IoU，输入格式为xyxy"""
+    # box1: [N, 4], box2: [M, 4]
+    area1 = (box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1])  # [N]
+    area2 = (box2[:, 2] - box2[:, 0]) * (box2[:, 3] - box2[:, 1])  # [M]
 
-        # 如果需要恢复训练，则加载之前的检查点
-        if self.resume is not None:
-            self._load_checkpoint()
+    # 计算交集
+    lt = torch.max(box1[:, None, :2], box2[:, :2])  # [N, M, 2]
+    rb = torch.min(box1[:, None, 2:], box2[:, 2:])  # [N, M, 2]
 
-        # 创建 tensorboard writer
-        self.writer = SummaryWriter(log_dir=os.path.join(cfg.output_dir, datetime.now().strftime("%Y%m%d-%H%M%S")))
+    wh = (rb - lt).clamp(min=0)  # [N, M, 2]
+    inter = wh[:, :, 0] * wh[:, :, 1]  # [N, M]
 
-        # 初始化 CSV 文件路径
-        self.csv_file_path = os.path.join(cfg.output_dir, 'result.csv')
-        # 初始化结果 DataFrame
-        self.results_df = pd.DataFrame(columns=[
-            'epoch', 'train_loss', 'train_IoU50_95', 'train_AP50_95',
-            'val_loss', 'val_mAP', 'val_IoU50', 'val_IoU75', 'val_IoU50_95'
-        ])
+    union = area1[:, None] + area2 - inter
+    iou = inter / union
+    return iou
 
-    def _load_checkpoint(self):
-        """加载最新的检查点以恢复训练"""
-        if os.path.exists(self.resume):
-            logging.info(f"正在恢复训练，从检查点 {self.resume} 加载")
-            checkpoint = torch.load(self.resume, map_location=self.device)
-            self.model.load_state_dict(checkpoint['model'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.scheduler.load_state_dict(checkpoint['scheduler'])
-            self.start_epoch = checkpoint['epoch'] + 1
-            self.best_val_loss = checkpoint.get('best_val_loss', float("inf"))
-            logging.info(f"恢复训练成功，将从epoch {self.start_epoch}开始，最佳验证损失: {self.best_val_loss:.4f}")
+
+def compute_ap_single_class(pred_boxes, pred_scores, gt_boxes, iou_threshold=0.5):
+    """计算单个类别的AP"""
+    if len(pred_boxes) == 0:
+        return 0.0 if len(gt_boxes) > 0 else 1.0
+
+    if len(gt_boxes) == 0:
+        return 0.0
+
+    # 按置信度排序
+    sorted_indices = torch.argsort(pred_scores, descending=True)
+    pred_boxes = pred_boxes[sorted_indices]
+    pred_scores = pred_scores[sorted_indices]
+
+    # 计算IoU
+    ious = compute_iou(pred_boxes, gt_boxes)  # [N_pred, N_gt]
+
+    # 匹配预测框和真实框
+    tp = torch.zeros(len(pred_boxes))
+    gt_matched = torch.zeros(len(gt_boxes), dtype=torch.bool)
+
+    for i, iou_row in enumerate(ious):
+        max_iou, max_idx = torch.max(iou_row, 0)
+        if max_iou >= iou_threshold and not gt_matched[max_idx]:
+            tp[i] = 1
+            gt_matched[max_idx] = True
+
+    # 计算累积精度和召回率
+    tp_cumsum = torch.cumsum(tp, 0)
+    fp_cumsum = torch.cumsum(1 - tp, 0)
+
+    recall = tp_cumsum / len(gt_boxes)
+    precision = tp_cumsum / (tp_cumsum + fp_cumsum)
+
+    # 计算AP (使用11点插值)
+    ap = 0.0
+    for t in torch.linspace(0, 1, 11):
+        p_interp = torch.max(precision[recall >= t]) if torch.any(recall >= t) else torch.tensor(0.0)
+        ap += p_interp / 11
+
+    return ap.item()
+
+
+def compute_detection_metrics(outputs, targets):
+    """计算检测指标"""
+    all_ap_50 = []
+    all_ap_50_95 = []
+    all_iou_50 = []
+
+    batch_size = len(targets)
+    pred_boxes = outputs.get('pred_boxes', None)
+    pred_scores = outputs.get('pred_scores', None)
+    pred_labels = outputs.get('pred_labels', None)
+
+    if pred_boxes is None or pred_scores is None:
+        return 0.0, 0.0, 0.0
+
+    for i in range(batch_size):
+        # 获取预测结果
+        if len(pred_boxes.shape) == 3:  # [batch, num_queries, 4]
+            p_boxes = pred_boxes[i]
+            p_scores = pred_scores[i] if pred_scores is not None else torch.ones(pred_boxes.shape[1])
+            p_labels = pred_labels[i] if pred_labels is not None else torch.zeros(pred_boxes.shape[1])
         else:
-            logging.warning(f"未找到检查点 {self.resume}，将从头开始训练")
+            # 如果是经过后处理的结果，需要根据具体格式调整
+            p_boxes = pred_boxes
+            p_scores = pred_scores if pred_scores is not None else torch.ones(len(pred_boxes))
+            p_labels = pred_labels if pred_labels is not None else torch.zeros(len(pred_boxes))
 
-    def train(self, data_loader_train, data_loader_val):
-        n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
-        logging.info('number of params: %d', n_parameters)
-        best_val_loss = self.best_val_loss
-        self.model.train()
-        for epoch in range(self.start_epoch, self.cfg.training.epochs):
-            epoch_start_time = time.time()
-            total_losses = defaultdict(float)
-            total_ious = []
-            total_aps = []
+        # 获取真实标签
+        gt_boxes = targets[i]['boxes']  # 应该已经是xyxy格式
+        gt_labels = targets[i]['labels']
 
-            with tqdm(data_loader_train, desc=f'Epoch {epoch}/{self.cfg.training.epochs} [Training]',
-                      total=len(data_loader_train), unit='batch') as pbar:
-                for batch_idx, (rgb_images, tir_images, targets) in enumerate(pbar):
-                    rgb_images = rgb_images.to(self.device)
-                    tir_images = tir_images.to(self.device)
-                    targets = [{k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in target.items()}
-                               for target in targets]
-                    outputs = self.model(rgb_images, tir_images, targets)
-                    loss_dict = self.criterion(outputs, targets)
-                    loss = sum(loss_dict.values())
-                    loss_dict["total_loss"] = loss
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+        if len(gt_boxes) == 0:
+            continue
 
-                    for k, v in loss_dict.items():
-                        total_losses[k] += v.item()
+        # 过滤有效预测（基于置信度阈值）
+        valid_mask = p_scores > 0.1  # 可调整阈值
+        p_boxes = p_boxes[valid_mask]
+        p_scores = p_scores[valid_mask]
+        p_labels = p_labels[valid_mask]
 
-                    current_avg_losses = {k: v / (batch_idx + 1) for k, v in total_losses.items()}
-                    pbar.set_postfix(avg_loss=current_avg_losses["total_loss"])
+        if len(p_boxes) == 0:
+            all_ap_50.append(0.0)
+            all_ap_50_95.append(0.0)
+            all_iou_50.append(0.0)
+            continue
 
-                    if self.cfg.training.log_interval > 0 and batch_idx % self.cfg.training.log_interval == 0:
-                        elapsed_time = time.time() - epoch_start_time
-                        current_lr = self.optimizer.param_groups[0]['lr']
-                        log_str = f"[ep {epoch + 1}][lr {current_lr:.7f}][{elapsed_time:.2f}s] "
-                        log_str += f"Batch {batch_idx + 1}/{len(data_loader_train)} - "
-                        log_str += ", ".join([f"{k}: {v:.4f}" for k, v in current_avg_losses.items()])
-                        logging.info(log_str)
-                        self.writer.add_scalars("Training Loss", current_avg_losses,
-                                                epoch * len(data_loader_train) + batch_idx)
+        # 计算AP@0.5
+        ap_50 = compute_ap_single_class(p_boxes, p_scores, gt_boxes, 0.5)
+        all_ap_50.append(ap_50)
 
-                    # 计算当前批次的 IoU 和 AP
-                    eval_metrics = self.evaluate_batch(outputs, targets)
-                    total_ious.append(eval_metrics['iou'])
-                    total_aps.append(eval_metrics['ap'])
+        # 计算AP@0.5:0.95 (简化版本，只计算几个IoU阈值)
+        ap_list = []
+        for iou_thresh in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]:
+            ap = compute_ap_single_class(p_boxes, p_scores, gt_boxes, iou_thresh)
+            ap_list.append(ap)
+        all_ap_50_95.append(np.mean(ap_list))
 
-            avg_losses = {k: v / len(data_loader_train) for k, v in total_losses.items()}
-            epoch_elapsed_time = time.time() - epoch_start_time
+        # 计算IoU@0.5 (最大IoU)
+        if len(p_boxes) > 0 and len(gt_boxes) > 0:
+            ious = compute_iou(p_boxes, gt_boxes)
+            max_iou = torch.max(ious).item()
+            all_iou_50.append(max_iou)
+        else:
+            all_iou_50.append(0.0)
 
-            # 获取当前学习率
-            current_lr = self.optimizer.param_groups[0]['lr']
+    avg_ap_50 = np.mean(all_ap_50) if all_ap_50 else 0.0
+    avg_ap_50_95 = np.mean(all_ap_50_95) if all_ap_50_95 else 0.0
+    avg_iou_50 = np.mean(all_iou_50) if all_iou_50 else 0.0
 
-            # 汇总一个 epoch 的评估结果
-            avg_iou = np.mean(total_ious) if total_ious else 0
-            avg_ap = np.mean(total_aps) if total_aps else 0
+    return avg_ap_50, avg_iou_50, avg_ap_50_95
 
-            # 更新指标到 DataFrame
-            self.results_df.loc[epoch] = {'epoch': epoch, 'train_loss': avg_losses,
-                                          'train_IoU50_95': avg_iou, 'train_AP50_95': avg_ap, 'val_loss': '',
-                                          'val_mAP': '', 'val_IoU50': '', 'val_IoU75': '', 'val_IoU50_95': ''
-                                          }
 
-            # 日志打印
-            log_str = f"[ep {epoch}][lr {current_lr:.7f}][{epoch_elapsed_time:.2f}s] Epoch {epoch} completed. "
-            log_str += ", ".join([f"{k}: {v:.4f}" for k, v in avg_losses.items()])
-            if 'train_IoU50_95' in self.results_df.columns and not pd.isna(
-                    self.results_df.loc[epoch, 'train_IoU50_95']):
-                log_str += f", train_IoU50_95: {self.results_df.loc[epoch, 'train_IoU50_95']:.4f}"
-            if 'train_AP50_95' in self.results_df.columns and not pd.isna(self.results_df.loc[epoch, 'train_AP50_95']):
-                log_str += f", train_AP50_95: {self.results_df.loc[epoch, 'train_AP50_95']:.4f}"
-            logging.info(log_str)
+def train(
+        model: torch.nn.Module,
+        criterion: torch.nn.Module,
+        dataloader,
+        optimizer: torch.optim.Optimizer,
+        device: torch.device,
+        epoch: int,
+        max_norm: float = 0.1,
+        **kwargs
+):
+    """训练一个epoch - 参考D-FINE实现"""
+    model.train()
+    criterion.train()
 
-            # 验证
-            val_start_time = time.time()
-            val_loss = self.validate(data_loader_val, epoch)
-            val_elapsed_time = time.time() - val_start_time
-            self.writer.add_scalar("Validation Total Loss", val_loss, epoch)
+    total_loss = 0.0
+    total_samples = 0
+    losses = []
 
-            # 保存最佳模型
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                self.save_model(os.path.join(self.model_dir, "best_model.pth"), is_best=True, val_loss=val_loss)
-                logging.info(f"发现更好的模型，验证损失从 {self.best_val_loss:.4f} 改进至 {val_loss:.4f}")
-                self.best_val_loss = val_loss
+    # 从kwargs获取可选参数
+    scaler = kwargs.get("scaler", None)
+    ema = kwargs.get("ema", None)
+    lr_warmup_scheduler = kwargs.get("lr_warmup_scheduler", None)
 
-            # 保存最新模型（每轮结束都保存）
-            self.save_model(
-                os.path.join(self.model_dir, "latest.pth"),
-                is_best=False,
-                epoch=epoch,
-                val_loss=val_loss
-            )
+    with tqdm(dataloader, desc=f'Epoch {epoch} [Training]') as pbar:
+        for batch_idx, (rgb_images, tir_images, targets) in enumerate(pbar):
+            global_step = epoch * len(dataloader) + batch_idx
+            metas = dict(epoch=epoch, step=batch_idx, global_step=global_step, epoch_step=len(dataloader))
 
-            # 更新学习率调度器
-            self.scheduler.step()
+            rgb_images = rgb_images.to(device)
+            tir_images = tir_images.to(device)
+            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()}
+                       for t in targets]
 
-            # 每个 epoch 后保存一次 CSV
-            self.results_df.to_csv(self.csv_file_path, index=False)
-            # logging.info(f"Epoch {epoch + 1} results saved to {self.csv_file_path}")
+            # 混合精度训练
+            if scaler is not None:
+                with torch.autocast(device_type=str(device), cache_enabled=True):
+                    outputs = model(rgb_images, tir_images, targets=targets)
 
-    def validate(self, data_loader_val, epoch):
-        self.model.eval()
-        total_losses = defaultdict(float)
-        total_aps = []
-        total_ious_50 = []
-        total_ious_75 = []
-        total_ious_50_95 = []
-        val_start_time = time.time()
+                # 检查NaN
+                if hasattr(outputs, 'pred_boxes') and torch.isnan(outputs["pred_boxes"]).any():
+                    print("NaN detected in pred_boxes!")
+                    continue
 
-        with tqdm(data_loader_val, desc='Validation', total=len(data_loader_val), unit='batch') as pbar:
-            with torch.no_grad():
-                for batch_idx, (rgb_images, tir_images, targets) in enumerate(pbar):
-                    rgb_images = rgb_images.to(self.device)
-                    tir_images = tir_images.to(self.device)
-                    targets = [{k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in target.items()}
-                               for target in targets]
+                with torch.autocast(device_type=str(device), enabled=False):
+                    loss_dict = criterion(outputs, targets, **metas)
 
-                    outputs = self.model(rgb_images, tir_images, targets)
-                    loss_dict = self.criterion(outputs, targets)
-                    loss = sum(loss_dict.values())
-                    loss_dict["total_loss"] = loss
+                loss = sum(loss_dict.values())
+                scaler.scale(loss).backward()
 
-                    for k, v in loss_dict.items():
-                        total_losses[k] += v.item()
+                if max_norm > 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
 
-                    current_avg_losses = {k: v / (batch_idx + 1) for k, v in total_losses.items()}
-                    pbar.set_postfix(avg_loss=current_avg_losses["total_loss"])
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
 
-                    eval_metrics = self.evaluate_batch(outputs, targets)
+            else:
+                outputs = model(rgb_images, tir_images, targets=targets)
+                loss_dict = criterion(outputs, targets, **metas)
 
-                    iou_50_95 = eval_metrics['iou']
-                    ap = eval_metrics['ap']
-                    iou_50 = self.calculate_iou_thresholded(outputs, targets, threshold=0.5)
-                    iou_75 = self.calculate_iou_thresholded(outputs, targets, threshold=0.75)
+                loss = sum(loss_dict.values())
+                optimizer.zero_grad()
+                loss.backward()
 
-                    total_ious_50_95.append(iou_50_95)
-                    total_aps.append(ap)
-                    total_ious_50.append(iou_50)
-                    total_ious_75.append(iou_75)
+                if max_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
 
-        # 计算验证集上的平均损失
-        avg_losses = {k: v / len(data_loader_val) for k, v in total_losses.items()}
+                optimizer.step()
 
-        # 获取当前学习率
-        current_lr = self.optimizer.param_groups[0]['lr']
+            # EMA更新
+            if ema is not None:
+                ema.update(model)
 
-        # 更新 DataFrame
-        self.results_df.loc[epoch, ['val_loss', 'val_mAP', 'val_IoU50', 'val_IoU75', 'val_IoU50_95']] = [
-            avg_losses["total_loss"], np.mean(total_aps), np.mean(total_ious_50), np.mean(total_ious_75), np.mean(total_ious_50_95)]
+            # 学习率预热
+            if lr_warmup_scheduler is not None:
+                lr_warmup_scheduler.step()
 
-        # 日志打印
-        log_str = f"[ep {epoch}][lr {current_lr:.7f}][{(time.time() - val_start_time):.2f}s] Validation - "
-        log_str += ", ".join([f"{k}: {v:.4f}" for k, v in avg_losses.items()])
-        if 'val_mAP' in self.results_df.columns and not pd.isna(self.results_df.loc[epoch, 'val_mAP']):
-            log_str += f", mAP: {self.results_df.loc[epoch, 'val_mAP']:.4f}"
-        if 'val_IoU50' in self.results_df.columns and not pd.isna(self.results_df.loc[epoch, 'val_IoU50']):
-            log_str += f", IoU50: {self.results_df.loc[epoch, 'val_IoU50']:.4f}"
-        if 'val_IoU75' in self.results_df.columns and not pd.isna(self.results_df.loc[epoch, 'val_IoU75']):
-            log_str += f", IoU75: {self.results_df.loc[epoch, 'val_IoU75']:.4f}"
-        if 'val_IoU50_95' in self.results_df.columns and not pd.isna(self.results_df.loc[epoch, 'val_IoU50_95']):
-            log_str += f", IoU50-95: {self.results_df.loc[epoch, 'val_IoU50_95']:.4f}"
-        logging.info(log_str)
+            # 检查loss是否有限
+            if not math.isfinite(loss.item()):
+                print(f"Loss is {loss.item()}, stopping training")
+                print(loss_dict)
+                sys.exit(1)
 
-        return avg_losses["total_loss"]
+            total_loss += loss.item() * rgb_images.size(0)
+            total_samples += rgb_images.size(0)
+            losses.append(loss.item())
 
-    def save_model(self, path, is_best=False, **kwargs):
-        state = {
-            'model': self.model.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-            'scheduler': self.scheduler.state_dict(),
-            'cfg': self.cfg,
-            **kwargs
-        }
-        torch.save(state, path)
-        # logging.info(f"Model saved to {path}")
+            pbar.set_postfix({
+                'loss': total_loss / total_samples,
+                'lr': optimizer.param_groups[0]["lr"]
+            })
 
-    def calculate_iou(self, pred_boxes, true_boxes):
-        return box_iou(pred_boxes, true_boxes)
+    epoch_loss = total_loss / total_samples
+    return {
+        'loss': epoch_loss,
+        'lr': optimizer.param_groups[0]["lr"]
+    }
 
-    def compute_ap(self, recalls, precisions):
-        mrec = np.concatenate(([0.0], recalls, [1.0]))
-        mpre = np.concatenate(([0.0], precisions, [0.0]))
 
-        for i in range(mpre.size - 1, 0, -1):
-            mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
+@torch.no_grad()
+def evaluate(
+        model: torch.nn.Module,
+        criterion: torch.nn.Module,
+        postprocessor,  # DetNMSPostProcessor
+        dataloader,
+        device: torch.device,
+        epoch: int,
+        **kwargs
+):
+    """评估模型 - 参考D-FINE实现，支持DetNMSPostProcessor"""
+    model.eval()
+    criterion.eval()
+    if postprocessor is not None:
+        postprocessor.eval()
 
-        indices = np.where(mrec[1:] != mrec[:-1])[0] + 1
-        ap = np.sum((mrec[indices] - mrec[indices - 1]) * mpre[indices])
-        return ap
+    total_loss = 0.0
+    total_samples = 0
 
-    def calculate_iou_thresholded(self, outputs, targets, threshold=0.5):
-        pred_boxes = outputs['pred_boxes'].detach().cpu()
-        true_boxes = torch.stack([target['boxes'].cpu() for target in targets]).detach().cpu()
+    # 存储所有预测和真实标签用于整体评估
+    gt_all = []
+    preds_all = []
 
-        # 移除批次维度
-        pred_boxes = pred_boxes.squeeze(0)
-        true_boxes = true_boxes.squeeze(0)
+    with torch.no_grad(), tqdm(dataloader, desc=f'Epoch {epoch} [Validation]') as pbar:
+        for batch_idx, (rgb_images, tir_images, targets) in enumerate(pbar):
+            rgb_images = rgb_images.to(device)
+            tir_images = tir_images.to(device)
+            targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in target.items()}
+                       for target in targets]
 
-        ious = self.calculate_iou(pred_boxes, true_boxes)
-        diag_ious = torch.diag(ious)
-        matched = diag_ious > threshold
-        if len(diag_ious) == 0:
-            return 0.0
-        return diag_ious[matched].mean().item() if matched.any() else 0.0
+            outputs = model(rgb_images, tir_images)
 
-    def evaluate_batch(self, outputs, targets):
-        all_pred_boxes = outputs['pred_boxes'].detach().cpu()
-        all_pred_logits = outputs['pred_logits'].detach().cpu()
-        all_true_boxes = [target['boxes'].cpu() for target in targets]
-        all_true_labels = [target['labels'].cpu() for target in targets]
+            # 计算损失（只在训练模式下需要metas）
+            metas = dict(epoch=epoch, step=batch_idx)
+            loss_dict = criterion(outputs, targets, **metas)
+            loss = sum(loss_dict.values())
+            total_loss += loss.item() * rgb_images.size(0)
+            total_samples += rgb_images.size(0)
 
-        ious_all = []
-        aps = []
+            # 后处理输出
+            if postprocessor is not None:
+                # 获取原始图像尺寸
+                if "size" in targets[0]:
+                    orig_target_sizes = torch.stack([t["size"] for t in targets], dim=0)
+                else:
+                    # 如果没有size，使用当前图像尺寸
+                    h, w = rgb_images.shape[-2:]
+                    orig_target_sizes = torch.tensor([[h, w]] * len(targets), device=device)
 
-        for i in range(len(targets)):
-            pred_boxes = all_pred_boxes[i]
-            pred_logits = all_pred_logits[i]
-            true_boxes = all_true_boxes[i]
-            true_labels = all_true_labels[i]
+                # 使用DetNMSPostProcessor进行后处理
+                results = postprocessor(outputs, orig_target_sizes)
 
-            if len(pred_boxes) == 0 or len(true_boxes) == 0:
+                # 格式化结果用于评估
+                for idx, (target, result) in enumerate(zip(targets, results)):
+                    # 真实标签 - 确保boxes格式正确
+                    gt_boxes = target["boxes"]
+                    if gt_boxes.shape[0] > 0:  # 只有当存在真实框时才添加
+                        gt_all.append({
+                            "boxes": gt_boxes,  # 应该已经是xyxy格式
+                            "labels": target["labels"],
+                        })
+
+                        # 预测结果 - DetNMSPostProcessor输出已经是xyxy格式
+                        preds_all.append({
+                            "boxes": result["boxes"],  # xyxy格式
+                            "labels": result["labels"],  # 类别标签
+                            "scores": result["scores"]  # 置信度分数
+                        })
+
+            pbar.set_postfix({'loss': total_loss / total_samples})
+
+    val_loss = total_loss / total_samples
+
+    # 计算整体指标
+    if len(gt_all) > 0 and len(preds_all) > 0:
+        # 使用批量评估函数
+        avg_metrics = compute_batch_detection_metrics(gt_all, preds_all)
+    else:
+        avg_metrics = {'ap': 0.0, 'iou_50': 0.0, 'iou_50_95': 0.0}
+
+    metrics = {
+        'loss': val_loss,
+        **avg_metrics
+    }
+
+    return metrics
+
+
+def compute_batch_detection_metrics(gt_all, preds_all):
+    """计算批量检测指标"""
+    all_ap_50 = []
+    all_ap_50_95 = []
+    all_iou_50 = []
+
+    for gt, pred in zip(gt_all, preds_all):
+        gt_boxes = gt["boxes"]
+        gt_labels = gt["labels"]
+        pred_boxes = pred["boxes"]
+        pred_scores = pred["scores"]
+        pred_labels = pred["labels"]
+
+        if len(gt_boxes) == 0:
+            continue
+
+        if len(pred_boxes) == 0:
+            all_ap_50.append(0.0)
+            all_ap_50_95.append(0.0)
+            all_iou_50.append(0.0)
+            continue
+
+        # 按类别分别计算AP
+        unique_labels = torch.unique(gt_labels)
+        class_ap_50 = []
+        class_ap_50_95 = []
+        class_iou_50 = []
+
+        for label in unique_labels:
+            # 该类别的真实框
+            gt_mask = gt_labels == label
+            gt_class_boxes = gt_boxes[gt_mask]
+
+            # 该类别的预测框
+            pred_mask = pred_labels == label
+            if not pred_mask.any():
+                class_ap_50.append(0.0)
+                class_ap_50_95.append(0.0)
+                class_iou_50.append(0.0)
                 continue
 
-            ious = self.calculate_iou(pred_boxes, true_boxes)
-            ious_all.append(torch.diag(ious).mean().item())
+            pred_class_boxes = pred_boxes[pred_mask]
+            pred_class_scores = pred_scores[pred_mask]
 
-            pred_scores, _ = torch.max(F.softmax(pred_logits, dim=1), dim=1)
-            _, sorted_indices = torch.sort(pred_scores, descending=True)
-            pred_boxes_sorted = pred_boxes[sorted_indices]
+            # 计算该类别的AP
+            ap_50 = compute_ap_single_class(pred_class_boxes, pred_class_scores, gt_class_boxes, 0.5)
+            class_ap_50.append(ap_50)
 
-            tp = torch.zeros(pred_boxes_sorted.shape[0])
-            fp = torch.zeros(pred_boxes_sorted.shape[0])
+            # 计算AP@0.5:0.95
+            ap_list = []
+            for iou_thresh in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]:
+                ap = compute_ap_single_class(pred_class_boxes, pred_class_scores, gt_class_boxes, iou_thresh)
+                ap_list.append(ap)
+            class_ap_50_95.append(np.mean(ap_list))
 
-            matched_gt = torch.zeros(true_boxes.shape[0])
+            # 计算最大IoU
+            if len(pred_class_boxes) > 0 and len(gt_class_boxes) > 0:
+                ious = compute_iou(pred_class_boxes, gt_class_boxes)
+                max_iou = torch.max(ious).item()
+                class_iou_50.append(max_iou)
+            else:
+                class_iou_50.append(0.0)
 
-            for j in range(pred_boxes_sorted.shape[0]):
-                ious_j = box_iou(pred_boxes_sorted[j].unsqueeze(0), true_boxes)
-                max_iou, argmax_iou = ious_j.max(dim=1)
-                if max_iou.item() > 0.5:
-                    if matched_gt[argmax_iou.item()] == 0:
-                        tp[j] = 1
-                        matched_gt[argmax_iou.item()] = 1
-                    else:
-                        fp[j] = 1
-                else:
-                    fp[j] = 1
+        # 取所有类别的平均值
+        all_ap_50.append(np.mean(class_ap_50) if class_ap_50 else 0.0)
+        all_ap_50_95.append(np.mean(class_ap_50_95) if class_ap_50_95 else 0.0)
+        all_iou_50.append(np.mean(class_iou_50) if class_iou_50 else 0.0)
 
-            tp_cumsum = torch.cumsum(tp, dim=0)
-            fp_cumsum = torch.cumsum(fp, dim=0)
-            recalls = tp_cumsum / (len(true_boxes) + 1e-6)
-            precisions = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-6)
+    return {
+        'ap': np.mean(all_ap_50) if all_ap_50 else 0.0,
+        'iou_50': np.mean(all_iou_50) if all_iou_50 else 0.0,
+        'iou_50_95': np.mean(all_ap_50_95) if all_ap_50_95 else 0.0
+    }
 
-            ap = self.compute_ap(recalls.numpy(), precisions.numpy())
-            aps.append(ap)
-
-        avg_iou = np.mean(ious_all) if ious_all else 0
-        avg_ap = np.mean(aps) if aps else 0
-        return {
-            'iou': avg_iou,
-            'ap': avg_ap
-        }
-
-
-def train(cfg):
-    from dataloader import build_dataset
-    data_loader_train, data_loader_val = build_dataset(cfg)
-    engine = TrainingEngine(cfg)
-    engine.train(data_loader_train, data_loader_val)

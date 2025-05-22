@@ -20,10 +20,11 @@ SUPPORTED_IMAGE_FORMATS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp']
 
 
 class Crowds(Dataset):
-    def __init__(self, transform, train=False, test=False, **kwargs):
+    def __init__(self, transform, train=False, test=False, box_fmt='cxcywh', **kwargs):
         self.data_path = kwargs.get('data_root', '')
         self.train = train
         self.test = test
+        self.box_fmt = box_fmt
         self.data_format = kwargs.get('data_format', 'default')
         self.label_format = kwargs.get('label_format', 'coco')
 
@@ -82,20 +83,20 @@ class Crowds(Dataset):
                     label_path = None
 
                 if os.path.isfile(rgb_img_path) and os.path.isfile(tir_img_path):
-                    has_targets = False
-                    if self.label_format == "yolo" and os.path.isfile(label_path):
-                        with open(label_path, 'r') as f:
-                            lines = f.readlines()
-                            if lines:
-                                has_targets = True
-                    elif self.label_format == "coco" and self.coco_annotations:
-                        img_id = int(os.path.splitext(filename)[0])
-                        annotations = [ann for ann in self.coco_annotations["annotations"] if ann["image_id"] == img_id]
-                        has_targets = len(annotations) > 0
-
-                    if has_targets or self.test:
-                        self.img_map[rgb_img_path] = (tir_img_path, label_path)
-                        self.img_list.append(rgb_img_path)
+                    # has_targets = False
+                    # if self.label_format == "yolo" and os.path.isfile(label_path):
+                    #     with open(label_path, 'r') as f:
+                    #         lines = f.readlines()
+                    #         if lines:
+                    #             has_targets = True
+                    # elif self.label_format == "coco" and self.coco_annotations:
+                    #     img_id = int(os.path.splitext(filename)[0])
+                    #     annotations = [ann for ann in self.coco_annotations["annotations"] if ann["image_id"] == img_id]
+                    #     has_targets = len(annotations) > 0
+                    #
+                    # if has_targets or self.test:
+                    self.img_map[rgb_img_path] = (tir_img_path, label_path)
+                    self.img_list.append(rgb_img_path)
 
         elif self.data_format == "custom":
             list_file = os.path.join(self.data_path, 'list', 'test.txt' if self.test else 'train.txt')
@@ -124,20 +125,20 @@ class Crowds(Dataset):
                         self.img_map[rgb_img_path] = (tir_img_path, None)
                         self.img_list.append(rgb_img_path)
                     else:
-                        has_targets = False
-                        if self.label_format == "yolo" and os.path.isfile(label_path):
-                            with open(label_path, 'r') as f:
-                                lines = f.readlines()
-                                if lines:
-                                    has_targets = True
-                        elif self.label_format == "coco" and self.coco_annotations:
-                            img_id = int(os.path.splitext(filename)[0])
-                            annotations = [ann for ann in self.coco_annotations["annotations"] if ann["image_id"] == img_id]
-                            has_targets = len(annotations) > 0
-
-                        if has_targets or self.test:
-                            self.img_map[rgb_img_path] = (tir_img_path, label_path)
-                            self.img_list.append(rgb_img_path)
+                        # has_targets = False
+                        # if self.label_format == "yolo" and os.path.isfile(label_path):
+                        #     with open(label_path, 'r') as f:
+                        #         lines = f.readlines()
+                        #         if lines:
+                        #             has_targets = True
+                        # elif self.label_format == "coco" and self.coco_annotations:
+                        #     img_id = int(os.path.splitext(filename)[0])
+                        #     annotations = [ann for ann in self.coco_annotations["annotations"] if ann["image_id"] == img_id]
+                        #     has_targets = len(annotations) > 0
+                        #
+                        # if has_targets or self.test:
+                        self.img_map[rgb_img_path] = (tir_img_path, label_path)
+                        self.img_list.append(rgb_img_path)
 
         self.img_list = self.sort_filenames_numerically(self.img_list)
         self.nSamples = len(self.img_list)
@@ -182,11 +183,14 @@ class Crowds(Dataset):
                     if len(parts) >= 5:
                         class_id = int(parts[0])
                         xc, yc, w, h = map(float, parts[1:5])
-                        x1 = xc - w / 2
-                        y1 = yc - h / 2
-                        x2 = xc + w / 2
-                        y2 = yc + h / 2
-                        boxes.append([x1, y1, x2, y2])
+                        if self.box_fmt == 'xyxy':
+                            x1 = xc - w / 2
+                            y1 = yc - h / 2
+                            x2 = xc + w / 2
+                            y2 = yc + h / 2
+                            boxes.append([x1, y1, x2, y2])
+                        elif self.box_fmt == 'cxcywh':
+                            boxes.append([xc, yc, w, h])
                         labels.append(class_id)
             target["boxes"] = torch.tensor(boxes, dtype=torch.float32)
             target["labels"] = torch.tensor(labels, dtype=torch.int64)
@@ -198,14 +202,24 @@ class Crowds(Dataset):
             labels = []
             for ann in annotations:
                 x, y, w, h = ann["bbox"]
-                x1 = x
-                y1 = y
-                x2 = x + w
-                y2 = y + h
-                boxes.append([x1 / width, y1 / height, x2 / width, y2 / height])  # 归一化
+                if self.box_fmt == 'xyxy':
+                    x1 = x
+                    y1 = y
+                    x2 = x + w
+                    y2 = y + h
+                    boxes.append([x1 / width, y1 / height, x2 / width, y2 / height])  # 归一化
+                elif self.box_fmt == 'cxcywh':
+                    xc = x + w / 2
+                    yc = y + h / 2
+                    boxes.append([xc / width, yc / height, w / width, h / height])  # 归一化
                 labels.append(ann["category_id"])
             target["boxes"] = torch.tensor(boxes, dtype=torch.float32)
             target["labels"] = torch.tensor(labels, dtype=torch.int64)
+
+        # ====== 如果没有检测框，使用空张量 ======
+        if target["boxes"] is None or target["labels"] is None:
+            target["boxes"] = torch.empty((0, 4), dtype=torch.float32)
+            target["labels"] = torch.empty((0,), dtype=torch.int64)
 
         # 添加 image_id 和 size 字段
         img_id = int(os.path.splitext(filename)[0]) if self.label_format == "coco" else index

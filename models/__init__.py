@@ -1,6 +1,5 @@
 from .backbones import BackBones
-from .dfine import DFINE, HungarianMatcher
-from .criterion import DetCriterion
+from .dfine import DFINE, HungarianMatcher, DFINECriterion
 
 
 def build_model(cfg, training=False):
@@ -12,13 +11,15 @@ def build_model(cfg, training=False):
                                cfg.criterion.matcher.alpha,
                                cfg.criterion.matcher.gamma
                                )
-    losses = DetCriterion(cfg.criterion.losses,
-                          cfg.criterion.weight_dict.to_dict(),
-                          cfg.model.num_classes,
-                          cfg.criterion.alpha,
-                          cfg.criterion.gamma,
-                          box_fmt='xyxy',
-                          matcher=matcher,
+
+    losses = DFINECriterion(
+        matcher=matcher,
+        weight_dict=cfg.criterion.weight_dict.to_dict(),
+        losses=cfg.criterion.losses,
+        alpha=cfg.criterion.alpha,
+        gamma=cfg.criterion.gamma,
+        num_classes=cfg.model.num_classes,
+        reg_max=cfg.criterion.reg_max,
                           )
 
     return model, losses
