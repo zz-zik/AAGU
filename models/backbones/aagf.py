@@ -9,13 +9,14 @@
 @Usage   : 该方法通过先分别在RGB和TIR的特征图上生成目标的中心锚点，然后模型根据锚点在哪个特征图上，选择哪个特征图的这部分特征，分别在RGB和TIR选择含有目标的特征后进行注意力融合。
 feat_rgb ──┐
             ├─ Global Attention Fusion ─── fused_global ──┐
-feat_tir ──┘                                           │
-                                                         ├─ Final Output
+feat_tir ──┘                                              │
+                                                          ├─ Final Output
                                                 Local Anchor-based Fusion (ROI)
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.ops import RoIAlign
 
 __all__ = ['AAGF']
 
@@ -39,6 +40,9 @@ class LocalFeatureFusion(nn.Module):
 
 
 class GlobalFeatureFusion(nn.Module):
+    """
+    全局特征融合
+    """
     def __init__(self, channels):
         super().__init__()
         self.fuser = LocalFeatureFusion(channels, roi_size=1)  # ROI 大小为 1x1
@@ -75,28 +79,28 @@ class AAGF(nn.Module):
     def __init__(self, channels, roi_size=7,
                  use_confidence=False,
                  use_similarity=False,
-                 use_attention=True,
-                 multi_scale=False):
+                 use_attention=True):
         super().__init__()
         self.channels = channels
         self.roi_size = roi_size
-        self.padding = roi_size // 2
         self.use_confidence = use_confidence
         self.use_similarity = use_similarity
         self.use_attention = use_attention
-        self.multi_scale = multi_scale
 
         if use_attention:
             self.att_conv = nn.Conv2d(channels * 2, 2, kernel_size=1)
 
         self.global_fuser = GlobalFeatureFusion(channels=self.channels)
 
+        # 使用 RoIAlign 替代手工裁剪
+        self.roi_align = RoIAlign(output_size=(roi_size, roi_size), spatial_scale=1.0, sampling_ratio=-1)
+
     def extract_roi_features(self, features, anchors):
         """
-        从特征图中提取局部 ROI 特征
+        使用 RoIAlign 提取 ROI 特征
         Args:
             features: (B, C, H, W)
-            anchors: (B, N, 2)，每个样本有 N 个锚点
+            anchors: (B, N, 2)  [x, y]
         Returns:
             rois: (B*N, C, roi_size, roi_size)
         """
@@ -104,28 +108,23 @@ class AAGF(nn.Module):
         device = features.device
         anchors = anchors.to(device)
 
-        # 将 anchor clamp 到合法范围
-        _, N, _ = anchors.shape
-        anchors[..., 0] = anchors[..., 0].clamp(self.padding, W - self.padding - 1)
-        anchors[..., 1] = anchors[..., 1].clamp(self.padding, H - self.padding - 1)
-        anchors = anchors.long()
+        # 转换为 [x_center, y_center] -> [x1, y1, x2, y2]
+        anchors = anchors.float()
+        half_size = self.roi_size / 2
+        boxes = torch.stack([
+            anchors[..., 0] - half_size,
+            anchors[..., 1] - half_size,
+            anchors[..., 0] + half_size,
+            anchors[..., 1] + half_size,
+        ], dim=-1)  # shape: (B, N, 4)
 
-        rois = []
-        for b in range(B):
-            for i in range(N):
-                x_center, y_center = anchors[b, i]
-                x0 = x_center - self.roi_size // 2
-                y0 = y_center - self.roi_size // 2
-                x1 = x0 + self.roi_size
-                y1 = y0 + self.roi_size
+        # 添加 batch index
+        batch_indices = torch.arange(B, device=device).view(B, 1, 1).expand(-1, anchors.shape[1], -1)
+        rois_input = torch.cat([batch_indices, boxes], dim=-1).view(-1, 5)  # shape: (B*N, 5)
 
-                roi = features[b, :, y0:y1, x0:x1]  # (C, roi_size, roi_size)
-                rois.append(roi.unsqueeze(0))  # 添加 batch 维度
-
-        if not rois:
-            return torch.empty((0, C, self.roi_size, self.roi_size), device=device)
-
-        return torch.cat(rois, dim=0)
+        # 使用 RoIAlign 提取特征
+        rois = self.roi_align(features, rois_input)
+        return rois  # shape: (B*N, C, r, r)
 
     def select_by_confidence(self, rgb_rois, tir_rois, conf_rgb, conf_tir):
         """置信度比较
@@ -156,6 +155,9 @@ class AAGF(nn.Module):
         return torch.where(mask, rgb_rois, tir_rois)
 
     def attention_fuse(self, rgb_rois, tir_rois):
+        """
+        根据注意力权重进行融合
+        """
         concat_feat = torch.cat([rgb_rois, tir_rois], dim=1)  # (N, 2C, r, r)
         attention_weights = F.softmax(self.att_conv(concat_feat), dim=1)  # (N, 2, r, r)
         fused_rois = rgb_rois * attention_weights[:, 0:1] + tir_rois * attention_weights[:, 1:2]
@@ -163,7 +165,7 @@ class AAGF(nn.Module):
 
     def fuse_rois_to_map(self, base_feat, rois, anchors):
         """
-        将融合后的 ROI 放回原始特征图
+        使用掩码加权融合 ROI 到全局特征图
         Args:
             base_feat: 基础特征图，可以是全局融合后的特征 (B, C, H, W)
             rois: (N, C, r, r)
@@ -173,26 +175,20 @@ class AAGF(nn.Module):
         """
         B, C, H, W = base_feat.shape
         fused_map = base_feat.clone()
-        anchors = anchors.to(base_feat.device).long()
 
-        # Clamp 坐标
-        anchors[..., 0] = anchors[..., 0].clamp(self.padding, W - self.padding - 1)
-        anchors[..., 1] = anchors[..., 1].clamp(self.padding, H - self.padding - 1)
+        # 构造 ROI 坐标
+        anchors = anchors.to(base_feat.device).float()
+        half_size = self.roi_size / 2
+        x0 = (anchors[..., 0] - half_size).long().clamp(0, W - self.roi_size)
+        y0 = (anchors[..., 1] - half_size).long().clamp(0, H - self.roi_size)
 
         idx = 0
         for b in range(B):
-            for i in range(anchors.size(1)):
-                x_center, y_center = anchors[b, i]
-                x0 = x_center - self.roi_size // 2
-                y0 = y_center - self.roi_size // 2
-                x1 = x0 + self.roi_size
-                y1 = y0 + self.roi_size
-
-                try:
-                    fused_map[b, :, y0:y1, x0:x1] = rois[idx]
-                    idx += 1
-                except IndexError:
-                    break
+            for i in range(anchors.shape[1]):
+                x_start, y_start = x0[b, i], y0[b, i]
+                x_end, y_end = x_start + self.roi_size, y_start + self.roi_size
+                fused_map[b, :, y_start:y_end, x_start:x_end] = rois[idx].detach()  # detach 避免保留图
+                idx += 1
 
         return fused_map
 
