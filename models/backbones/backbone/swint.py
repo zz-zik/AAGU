@@ -42,7 +42,7 @@ if __name__ == '__main__':
     cfg = load_config('../../../configs/config.yaml')
     # 测试Swin Transformer
     model_swin = SwinT(cfg)
-    x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x512的图像
+    x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x640的图像
     feats_swin = model_swin(x)
     print("Swin Transformer Features:")
     for i, feat in enumerate(feats_swin):

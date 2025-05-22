@@ -156,6 +156,30 @@ class DetCriterion(torch.nn.Module):
         losses["loss_giou"] = loss_giou.sum() / num_boxes
         return losses
 
+    # def loss_boxes(self, outputs, targets, indices, num_boxes):
+    #     idx = self._get_src_permutation_idx(indices)
+    #     src_boxes = outputs["pred_boxes"][idx]
+    #     target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
+    #
+    #     # ✅ 防御性处理：确保 w > 0, h > 0
+    #     src_boxes = src_boxes.clamp(min=1e-6, max=1.0)  # [cx, cy, w, h], 避免 w/h <= 0
+    #
+    #     losses = {}
+    #     loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction="none")
+    #     losses["loss_bbox"] = loss_bbox.sum() / num_boxes
+    #
+    #     src_boxes_xyxy = torchvision.ops.box_convert(src_boxes, in_fmt=self.box_fmt, out_fmt="xyxy")
+    #     target_boxes_xyxy = torchvision.ops.box_convert(target_boxes, in_fmt=self.box_fmt, out_fmt="xyxy")
+    #
+    #     # ✅ 可选：再加一层裁剪，防止超出图像范围
+    #     src_boxes_xyxy = torch.clamp(src_boxes_xyxy, min=0.0, max=1.0)
+    #     target_boxes_xyxy = torch.clamp(target_boxes_xyxy, min=0.0, max=1.0)
+    #
+    #     loss_giou = 1 - box_ops.elementwise_generalized_box_iou(src_boxes_xyxy, target_boxes_xyxy)
+    #     losses["loss_giou"] = loss_giou.sum() / num_boxes
+    #     return losses
+
+
     def loss_boxes_giou(self, outputs, targets, indices, num_boxes):
         assert "pred_boxes" in outputs
         idx = self._get_src_permutation_idx(indices)

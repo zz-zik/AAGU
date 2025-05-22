@@ -139,8 +139,9 @@ def distance2bbox(points, distance, reg_scale):
 
     bboxes = torch.stack([x1, y1, x2, y2], -1)
 
-    return box_xyxy_to_cxcywh(bboxes)
-
+    # TODO:
+    # return box_xyxy_to_cxcywh(bboxes)
+    return bboxes
 
 def bbox2distance(points, bbox, reg_max, reg_scale, up, eps=0.1):
     """

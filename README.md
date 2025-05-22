@@ -6,9 +6,6 @@
 
 - Python 3.12
 - CUDA + PyTorch
-- HuggingFace
-- 稳定的网络连接
-- 高质量代理IP（重要）
 
 ## 安装步骤
 
@@ -22,6 +19,7 @@ conda activate aagu
 ### 2. 安装依赖包
 
 ```bash
+pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121      
 pip install -r requirements.txt
 ```
 

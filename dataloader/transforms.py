@@ -13,7 +13,7 @@ import torchvision
 from typing import Any, Dict, Tuple
 import torch
 import torch.nn as nn
-from torchvision.transforms import functional as F, Compose, ToTensor, Normalize
+from torchvision.transforms import functional as F, Compose, Normalize
 
 
 class Transforms(nn.Module):
@@ -39,30 +39,35 @@ class Transforms(nn.Module):
         ])
 
         # 获取数据增强的参数
-        self.random_flip = kwargs.get('random_flip', 0.0)
-        self.random_rotation = kwargs.get('random_rotation', 0.0)
-        self.random_resize = kwargs.get('random_resize', 0.0)
-        self.color_jitter = kwargs.get('color_jitter', 0.0)
-        self.gamma_correction = kwargs.get('gamma_correction', 0.0)
-        self.random_erase = kwargs.get('random_erase', 0.0)
-        self.blur_sigma = kwargs.get('blur_sigma', 0.0)
-
-        # 构建数据增强操作列表
         self.transforms = []
-        if self.random_flip > 0.0:
-            self.transforms.append(RandomFlip(self.random_flip))
-        if self.random_rotation > 0.0:
-            self.transforms.append(RandomRotation(self.random_rotation))
-        if self.random_resize > 0.0:
-            self.transforms.append(RandomResize(prob=self.random_resize))
-        if self.color_jitter > 0.0:
-            self.transforms.append(ColorJitter(self.color_jitter))
-        if self.gamma_correction > 0.0:
-            self.transforms.append(GammaCorrection(prob=self.gamma_correction))
-        if self.random_erase > 0.0:
-            self.transforms.append(RandomErasing(self.random_erase))
-        if self.blur_sigma > 0.0:
-            self.transforms.append(GaussianBlur(prob=self.blur_sigma))
+
+        transform_params = {
+            'RandomFlip': kwargs.get('random_flip', 0.0),
+            'RandomRotation': kwargs.get('random_rotation', 0.0),
+            'RandomResize': kwargs.get('random_resize', 0.0),
+            'ColorJitter': kwargs.get('color_jitter', 0.0),
+            'GammaCorrection': kwargs.get('gamma_correction', 0.0),
+            'RandomErasing': kwargs.get('random_erase', 0.0),
+            'GaussianBlur': kwargs.get('blur_sigma', 0.0),
+        }
+
+        for name, param in transform_params.items():
+            if param > 0.0:
+                if name == 'RandomFlip':
+                    self.transforms.append(RandomFlip(prob=param))
+                elif name == 'RandomRotation':
+                    self.transforms.append(RandomRotation(degrees=10.0, prob=param))
+                elif name == 'RandomResize':
+                    self.transforms.append(RandomResize(scale_range=(0.8, 1.2), prob=param))
+                elif name == 'ColorJitter':
+                    self.transforms.append(
+                        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, prob=param))
+                elif name == 'GammaCorrection':
+                    self.transforms.append(GammaCorrection(gamma_range=(0.8, 1.2), prob=param))
+                elif name == 'RandomErasing':
+                    self.transforms.append(RandomErasing(p=param, scale=(0.02, 0.33), ratio=(0.3, 3.3)))
+                elif name == 'GaussianBlur':
+                    self.transforms.append(GaussianBlur(kernel_size=5, sigma=(0.1, 2.0), prob=param))
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
@@ -127,11 +132,32 @@ class RandomRotation(nn.Module):
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
+            _, h, w = rgb.shape
             angle = float(torch.empty(1).uniform_(-self.degrees, self.degrees))
+
+            # 获取仿射变换矩阵（仅旋转）
+            matrix = torchvision.transforms.functional._get_inverse_affine_matrix(
+                center=(w / 2, h / 2),
+                angle=angle,
+                translate=(0., 0.),
+                scale=1.0,
+                shear=(0.0,)
+            )
+            matrix = torch.tensor(matrix, dtype=torch.float32, device=rgb.device).view(3, 3)
+
+            # 应用变换
             rgb = F.rotate(rgb, angle)
             tir = F.rotate(tir, angle)
-            # 更新目标框（这里需要根据实际情况调整，旋转后的边界框可能需要重新计算）
+
+            # 更新目标框
+            if "boxes" in target and len(target["boxes"]) > 0:
+                target["boxes"] = apply_affine_to_boxes(target["boxes"], matrix, w, h)
+
+            # 验证仿射变换矩阵
+            print("Affine matrix after rotation:", matrix)
+
         return rgb, tir, target
+
 
 
 class RandomResize(nn.Module):
@@ -149,9 +175,23 @@ class RandomResize(nn.Module):
             new_size = (int(rgb.size(1) * scale), int(rgb.size(2) * scale))
             rgb = F.resize(rgb, new_size)
             tir = F.resize(tir, new_size)
-            # 更新目标框（根据缩放比例调整位置）
-            target["boxes"][:, :4] *= scale
+
+            # 获取新旧尺寸
+            img_h, img_w = rgb.shape[1], rgb.shape[2]
+            img_h_new, img_w_new = new_size
+
+            # 更新目标框
+            boxes = target["boxes"].clone()
+            boxes *= torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)  # 归一化 -> 绝对坐标
+            boxes *= scale  # 缩放
+            boxes /= torch.tensor([img_w_new, img_h_new, img_w_new, img_h_new], device=boxes.device)  # 再次归一化
+            target["boxes"] = boxes
+
+        # 可选：验证尺寸一致性
+        assert rgb.shape[1:] == tir.shape[1:], "RGB 和 TIR 图像尺寸不一致"
+
         return rgb, tir, target
+
 
 
 class ColorJitter(nn.Module):
@@ -201,16 +241,81 @@ class AffineTransform(nn.Module):
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
+            _, h, w = rgb.shape
             angle = float(torch.empty(1).uniform_(-self.degrees, self.degrees))
             translate_x = float(torch.empty(1).uniform_(-self.translate[0], self.translate[0]))
             translate_y = float(torch.empty(1).uniform_(-self.translate[1], self.translate[1]))
             scale = float(torch.empty(1).uniform_(self.scale[0], self.scale[1]))
             shear = float(torch.empty(1).uniform_(-self.shear, self.shear))
+
+            # 获取仿射变换矩阵
+            matrix = torchvision.transforms.functional._get_inverse_affine_matrix(
+                center=(w / 2, h / 2),
+                angle=angle,
+                translate=(translate_x * w, translate_y * h),
+                scale=scale,
+                shear=shear
+            )
+            matrix = torch.tensor(matrix, dtype=torch.float32, device=rgb.device).view(3, 3)
+
+            # 应用变换
             rgb = F.affine(rgb, angle, (translate_x, translate_y), scale, shear)
             tir = F.affine(tir, angle, (translate_x, translate_y), scale, shear)
-            # 更新目标框（根据仿射变换矩阵调整位置）
+
+            # 更新 boxes
+            if "boxes" in target and len(target["boxes"]) > 0:
+                target["boxes"] = apply_affine_to_boxes(target["boxes"], matrix, w, h)
+
         return rgb, tir, target
 
+
+def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int, img_h: int) -> torch.Tensor:
+    """
+    Apply affine transformation to boxes in normalized [x_min, y_min, x_max, y_max] format.
+
+    Args:
+        boxes (Tensor): shape (N, 4), normalized coordinates
+        matrix (Tensor): affine matrix of shape (3, 3)
+        img_w (int): image width
+        img_h (int): image height
+
+    Returns:
+        Tensor: transformed boxes in normalized format
+    """
+    # Convert boxes from normalized [0, 1] to absolute pixel values
+    boxes_abs = boxes * torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)
+
+    # Convert boxes to corner points
+    points = torch.cat([
+        boxes_abs[:, :2].unsqueeze(1),  # top-left
+        torch.stack([boxes_abs[:, 2], boxes_abs[:, 1]], dim=1).unsqueeze(1),  # top-right
+        boxes_abs[:, 2:].unsqueeze(1),  # bottom-right
+        torch.stack([boxes_abs[:, 0], boxes_abs[:, 3]], dim=1).unsqueeze(1)  # bottom-left
+    ], dim=1)  # (N, 4, 2)
+
+    # Add homogeneous coordinate
+    ones = torch.ones(points.shape[0], points.shape[1], 1, device=points.device)
+    points_homogeneous = torch.cat([points, ones], dim=-1)  # (N, 4, 3)
+
+    # Apply affine transform
+    transformed_points = torch.matmul(points_homogeneous, matrix.T)  # (N, 4, 2)
+
+    # Extract new coordinates
+    new_x = transformed_points[:, :, 0]
+    new_y = transformed_points[:, :, 1]
+
+    # Build new box
+    new_boxes_abs = torch.stack([
+        new_x.min(dim=1).values,
+        new_y.min(dim=1).values,
+        new_x.max(dim=1).values,
+        new_y.max(dim=1).values,
+    ], dim=1)  # (N, 4)
+
+    # Clamp and normalize
+    new_boxes_abs = new_boxes_abs.clamp(min=0)
+    new_boxes = new_boxes_abs / torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)
+    return new_boxes.clamp(max=1.0)
 
 class RandomErasing(nn.Module):
     """随机擦除"""

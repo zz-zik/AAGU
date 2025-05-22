@@ -15,13 +15,14 @@ from PIL import Image
 from tqdm import tqdm
 
 
-def yolo_to_coco(yolo_label_path, image_path, image_id):
+def yolo_to_coco(yolo_label_path, image_path, image_id, labels):
     """
     将 YOLO 格式的标签转换为 COCO 格式
     参数：
         yolo_label_path : YOLO 标签文件路径
         image_path : 对应的图像文件路径
         image_id : 图像的唯一标识符
+        labels : 类别信息字典
     返回：
         COCO 格式的标签数据
     """
@@ -36,6 +37,9 @@ def yolo_to_coco(yolo_label_path, image_path, image_id):
                 if len(parts) >= 5:
                     # YOLO格式：类别 x_center y_center width height（归一化）
                     yolo_class_id = int(parts[0])
+                    # 检查类别 ID 是否越界，如果越界则修改为 0
+                    if yolo_class_id not in labels.values():
+                        yolo_class_id = 0
                     # 直接将 YOLO 类别 ID 映射到 COCO 类别 ID（这里假设类别 ID 一致）
                     coco_class_id = yolo_class_id
                     x_center = float(parts[1]) * width
@@ -62,7 +66,7 @@ def process_dataset(src_dir, dst_dir, labels):
     参数：
         src_dir : 原始数据集目录路径
         dst_dir : 输出整理后的数据集目录路径
-        labels : 类别信息
+        labels : 类别信息字典
     """
     # 创建目标目录结构
     for split in ['train', 'val']:
@@ -97,15 +101,27 @@ def process_dataset(src_dir, dst_dir, labels):
             yolo_label_src = os.path.join(src_dir, 'train_val', 'yolo-labels', f'{image_name}.txt')
             yolo_label_dst = os.path.join(dst_dir, split, 'labels', f'{image_name}.txt')
             if os.path.exists(yolo_label_src):
-                shutil.copy(yolo_label_src, yolo_label_dst)
+                # 检查 YOLO 标签中的类别 ID 是否越界
+                with open(yolo_label_src, 'r') as f:
+                    lines = f.readlines()
+                with open(yolo_label_dst, 'w') as f:
+                    for line in lines:
+                        parts = line.strip().split()
+                        if len(parts) >= 5:
+                            yolo_class_id = int(parts[0])
+                            # 检查类别 ID 是否越界，如果越界则修改为 0
+                            if yolo_class_id not in labels.values():
+                                yolo_class_id = 0
+                            parts[0] = str(yolo_class_id)
+                            f.write(' '.join(parts) + '\n')
             else:
                 # 创建空的 YOLO 标签文件
                 open(yolo_label_dst, 'w').close()
 
             # 转换 YOLO 到 COCO 格式
             image_path_rgb = os.path.join(src_dir, 'train_val', 'RGB', f'{image_name}.jpg')
-            yolo_label_path = yolo_label_src
-            coco_labels = yolo_to_coco(yolo_label_path, image_path_rgb, image_id)
+            yolo_label_path = yolo_label_dst  # 使用处理后的 YOLO 标签
+            coco_labels = yolo_to_coco(yolo_label_path, image_path_rgb, image_id, labels)
 
             # 添加图像信息到 COCO 数据
             with Image.open(image_path_rgb) as img:

@@ -1,10 +1,11 @@
 import torch
 from .transforms import Transforms
-from .loading_data import loading_data
+from .loading_data import loading_data, DeNormalize
+from .crowds_dataset import Crowds
 from utils import collate_fn_crowds
 from torch.utils.data import DataLoader
 import logging
-from .crowds_dataset import Crowds
+
 
 
 def build_dataset(cfg):
@@ -12,7 +13,7 @@ def build_dataset(cfg):
     sampler_train = torch.utils.data.RandomSampler(train_set)  # Random sampling
     sampler_val = torch.utils.data.SequentialSampler(val_set)  # Sequential sampling
     batch_sampler_train = torch.utils.data.BatchSampler(
-        sampler_train, cfg.training.batch_size, drop_last=False)
+        sampler_train, cfg.training.batch_size, drop_last=True)
     # DataLoader for training
     data_loader_train = DataLoader(train_set, batch_sampler=batch_sampler_train,
                                    collate_fn=collate_fn_crowds, num_workers=cfg.num_workers)

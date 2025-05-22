@@ -17,6 +17,7 @@ def build_model(cfg, training=False):
                           cfg.model.num_classes,
                           cfg.criterion.alpha,
                           cfg.criterion.gamma,
+                          box_fmt='xyxy',
                           matcher=matcher,
                           )
 

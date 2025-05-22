@@ -15,7 +15,8 @@ from models.dfine import HybridEncoder, DFINETransformer
 class DFINE(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.backbone = BackBones(cfg)
+        self.backbone = BackBones(cfg, cfg.model.backbone_name, cfg.model.out_dims, cfg.model.aagf.roi_sizes,
+                                  cfg.model.aagf.use_confidence, cfg.model.aagf.use_attention, cfg.model.aagf.use_similarity)
         self.encoder = HybridEncoder(in_channels=cfg.model.out_dims, feat_strides=[8, 16, 32])
         self.decoder = DFINETransformer(num_classes=cfg.model.num_classes, feat_channels=[256, 256, 256])
 

@@ -9,7 +9,7 @@
 @Usage   :
 """
 from torch import nn
-from models.backbones import CenterHead, AAGF
+from models.backbones import CenterHead, AAGF, TFAM
 from models.backbones.backbone import build_backbone
 
 __all__ = ['BackBones']
@@ -61,7 +61,8 @@ __all__ = ['BackBones']
 
 class BackBones(nn.Module):
 
-    def __init__(self, cfg, backbone_name='hgnetv2', out_dims=[256, 512, 1024], roi_sizes=[14, 7, 3]):
+    def __init__(self, cfg, backbone_name='hgnetv2', out_dims=[256, 512, 1024], roi_sizes=[14, 7, 3],
+                 use_confidence=True, use_attention=False, use_similarity=False):
         super().__init__()
         self.backbone_name = backbone_name
         self.out_dims = out_dims
@@ -71,12 +72,17 @@ class BackBones(nn.Module):
             self.conv_list = nn.ModuleList([nn.Conv2d(in_dim, out_dim, kernel_size=1) for in_dim, out_dim in
                                             zip([512, 1024, 2048], self.out_dims)])  # [256, 512, 1024, 2048]
 
-        # 锚点检测头
-        self.ancher = nn.ModuleList([CenterHead(dim, num_anchors=10) for dim in self.out_dims])
-        # 锚点注意力引导融合模块
-        self.aagf = nn.ModuleList([
-            AAGF(channels=dim, roi_size=rs, use_confidence=True, use_attention=False, use_similarity=False)
-            for dim, rs in zip(self.out_dims, self.roi_sizes)
+        # # 锚点检测头
+        # self.ancher = nn.ModuleList([CenterHead(dim, num_anchors=10) for dim in self.out_dims])
+        # # 锚点注意力引导融合模块
+        # self.aagf = nn.ModuleList([
+        #     AAGF(channels=dim, roi_size=rs, use_confidence=use_confidence, use_attention=use_attention,
+        #          use_similarity=use_similarity)
+        #     for dim, rs in zip(self.out_dims, self.roi_sizes)
+        # ])
+        img_size = [80, 40, 20]
+        self.fusion = nn.ModuleList([
+            TFAM(size) for size in img_size
         ])
 
     def forward(self, rgb, tir):
@@ -92,13 +98,15 @@ class BackBones(nn.Module):
             feats_rgb = [self.conv_list[i](feat) for i, feat in enumerate(feats_rgb)]
             feats_tir = [self.conv_list[i](feat) for i, feat in enumerate(feats_tir)]
 
-        # 锚点检测头
-        ancher_rgb = [self.ancher[i](feat) for i, feat in enumerate(feats_rgb)]
-        ancher_tir = [self.ancher[i](feat) for i, feat in enumerate(feats_tir)]
-
-        # 锚点注意力引导融合模块
-        fused = [self.aagf[i](f_rgb, f_tir, a_rgb, a_tir) for i, f_rgb, f_tir, a_rgb, a_tir in
-                 zip(range(len(self.out_dims)), feats_rgb, feats_tir, ancher_rgb, ancher_tir)]
+        # # 锚点检测头
+        # ancher_rgb = [self.ancher[i](feat) for i, feat in enumerate(feats_rgb)]
+        # ancher_tir = [self.ancher[i](feat) for i, feat in enumerate(feats_tir)]
+        #
+        # # 锚点注意力引导融合模块
+        # fused = [self.aagf[i](f_rgb, f_tir, a_rgb, a_tir) for i, f_rgb, f_tir, a_rgb, a_tir in
+        #          zip(range(len(self.out_dims)), feats_rgb, feats_tir, ancher_rgb, ancher_tir)]
+        fused = [self.fusion[i](f_rgb, f_tir) for i, f_rgb, f_tir in
+                 zip(range(len(self.out_dims)), feats_rgb, feats_tir)]
 
         return fused
 

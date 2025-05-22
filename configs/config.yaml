@@ -6,18 +6,18 @@ num_workers: 4
 resume: null  # 如果存在，则恢复训练
 
 data:
-  data_root: ./dataset/OdinMJ
+  data_root: './dataset/OdinMJ_'
   data_format: 'default'  # [default, custom]
-  label_format: 'coco'  # [yolo, coco]
-  labels: [People"]  # 类别列表, 默认从0开始
+  label_format: 'yolo'  # [yolo, coco]
+  labels: ["People"]  # 类别列表, 默认从0开始
   transforms:
-    random_flip: 0.0
-    random_rotation: 0.0
-    random_resize: 0.0
-    color_jitter: 0.0
-    gamma_correction: 0.0
-    random_erase: 0.0
-    blur_sigma: 0.0
+    random_flip: 0.0            # 水平/垂直翻转概率
+    random_rotation: 0.0        # 最大旋转角度 ±10°
+    random_resize: 0.0          # 缩放比例范围 ±20%
+    color_jitter: 0.0           # 颜色扰动强度 (brightness, contrast, saturation)
+    gamma_correction: 0.0       # Gamma 校正概率
+    random_erase: 0.0           # 随机擦除概率
+    blur_sigma: 0.0             # 高斯模糊（暂时关闭）
 
 model:
   num_classes: 1
@@ -25,7 +25,11 @@ model:
   pretrained: True  # 是否使用BackBone预训练权重
   img_size: [512, 640]
   out_dims: [256, 512, 1024]
-  roi_sizes: [14, 7, 3]
+  aagf:
+    roi_sizes: [14, 7, 3]
+    use_confidence: True # 置信度融合
+    use_attention: False  # 相似度融合
+    use_similarity: False  # 注意力融合
 
 criterion:
   weight_dict:
@@ -53,17 +57,20 @@ logger:
 training:
   start_epoch: 1
   epochs: 200
-  scheduler: 'step'  # [step, plateau]
+  optimizer: 'adamw' # [sgd, adam, adamw]
+  betas: [0.9, 0.999]
+  eps: 0.00000001
+  weight_decay: 0.0001
+  scheduler: 'step'  # [step, plateau, multistep, cosine, onecycle, lambda]
   lr: 0.0001
-  lr_backbone: 0.00001
-  lr_drop: 200
-  batch_size: 8
-  eval_freq: 1
-  start_eval: 1
-  threshold: 0.5
-  step_size: 30
-  log_interval: 10
+  lr_drop: 60
   gamma: 0.1
+  lr_backbone: 0.00001
+  batch_size: 32
+  start_eval: 1
+  eval_freq: 1
+  threshold: 0.5
+  log_interval: 0
 
 test:
   img_dirs: './data'

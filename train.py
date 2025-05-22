@@ -8,18 +8,19 @@
 @Desc    : 
 @Usage   :
 """
-# from engine import train
-# from utils import load_config, get_output_dir, setup_logging
-# # 启动训练
-# if __name__ == "__main__":
-#     cfg = load_config('./configs/config.yaml')
-#     output_dir = get_output_dir(cfg.output_dir, cfg.name)
-#     cfg.output_dir = output_dir
-#     logger = setup_logging(cfg, output_dir)
-#     train(cfg)
+from engine import train
+from utils import load_config
+import os
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
-if __name__ == "__main__":
+def main():
+    cfg = load_config('./configs/config.yaml')
+    train(cfg)
+
+
+def data_loader_test():
     from utils import load_config
     from dataloader import build_dataset
 
@@ -37,15 +38,16 @@ if __name__ == "__main__":
         print("RGB images shape:", rgb_images.shape)
         print("TIR images shape:", tir_images.shape)
         print("Targets:", targets)
-        if i >= 10:  # 只检查前10个样本
-            break
 
-    # # 遍历验证数据加载器
-    # print("\nValidation data:")
-    # for i, (rgb_images, tir_images, targets) in enumerate(data_loader_val):
-    #     print(f"Val Batch {i + 1}:")
-    #     print("RGB images shape:", rgb_images.shape)
-    #     print("TIR images shape:", tir_images.shape)
-    #     print("Targets:", targets)
-    #     if i >= 10:  # 只检查前10个样本
-    #         break
+    # 遍历验证数据加载器
+    print("\nValidation data:")
+    for i, (rgb_images, tir_images, targets) in enumerate(data_loader_val):
+        print(f"Val Batch {i + 1}:")
+        print("RGB images shape:", rgb_images.shape)
+        print("TIR images shape:", tir_images.shape)
+        print("Targets:", targets)
+
+
+if __name__ == "__main__":
+    main()
+    # data_loader_test()

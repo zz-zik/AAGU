@@ -26,12 +26,6 @@ from torch.autograd import Variable
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 
-'''
-import torchvision
-if float(torchvision.__version__[:3]) < 0.7:
-    from torchvision.ops import _new_empty_tensor
-    from torchvision.ops.misc import _output_size
-'''
 import torchvision
 
 if float(torchvision.__version__[2:4]) < 7:
@@ -382,30 +376,29 @@ def collate_fn(batch):
     return tuple(batch)
 
 
-# 定义一个安全的 collate_fn
 def collate_fn_crowds(batch):
+    # 重新组织批次数据
     batch_new = []
-    targets = []
-
     for b in batch:
         img_rgb, img_tir, target = b
 
+        # 确保图像有批次维度 [B, C, H, W]
         if img_rgb.ndim == 3:
-            img_rgb = img_rgb.unsqueeze(0)
+            img_rgb = img_rgb.unsqueeze(0)  # 增加批次维度
         if img_tir.ndim == 3:
-            img_tir = img_tir.unsqueeze(0)
+            img_tir = img_tir.unsqueeze(0)  # 增加批次维度
 
-        # 处理每个样本
+        # 将每个样本添加到新的批次列表
         for i in range(img_rgb.shape[0]):
-            batch_new.append((img_rgb[i], img_tir[i]))
-            targets.append(target)
+            batch_new.append((img_rgb[i, :, :, :], img_tir[i, :, :, :], target))
 
-    # 组装成 (rgb_list, tir_list), targets
-    rgb_list, tir_list = zip(*batch_new)
-    rgb_tensor = nested_tensor_from_tensor_list(rgb_list)
-    tir_tensor = nested_tensor_from_tensor_list(tir_list)
-
-    return rgb_tensor, tir_tensor, targets
+    # 将新批次列表解压为单独的元素
+    batch = list(zip(*batch_new))
+    batch[0] = nested_tensor_from_tensor_list(batch[0])
+    batch[1] = nested_tensor_from_tensor_list(batch[1])
+    batch[2] = list(batch[2])
+    # 移除标签的通道维度
+    return tuple(batch)
 
 
 def _max_by_axis(the_list):
