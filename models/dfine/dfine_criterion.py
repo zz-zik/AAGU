@@ -73,11 +73,16 @@ class DFINECriterion(nn.Module):
         return {"loss_focal": loss}
 
     def loss_labels_vfl(self, outputs, targets, indices, num_boxes, values=None):
-        assert "pred_boxes" in outputs
+        assert "pred_logits" in outputs
         idx = self._get_src_permutation_idx(indices)
+
         if values is None:
             src_boxes = outputs["pred_boxes"][idx]
             target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
+
+            if len(target_boxes) == 0:
+                return {"loss_vfl": outputs["pred_logits"].sum() * 0}
+
             ious, _ = box_iou(box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes))
             ious = torch.diag(ious).detach()
         else:
@@ -105,15 +110,20 @@ class DFINECriterion(nn.Module):
         return {"loss_vfl": loss}
 
     def loss_boxes(self, outputs, targets, indices, num_boxes, boxes_weight=None):
-        """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
-        targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
-        The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
-        """
         assert "pred_boxes" in outputs
         idx = self._get_src_permutation_idx(indices)
+
         src_boxes = outputs["pred_boxes"][idx]
         target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
+
         losses = {}
+
+        if len(target_boxes) == 0:
+            # No targets, return zero loss
+            losses['loss_bbox'] = src_boxes.sum() * 0
+            losses['loss_giou'] = src_boxes.sum() * 0
+            return losses
+
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction="none")
         losses["loss_bbox"] = loss_bbox.sum() / num_boxes
 

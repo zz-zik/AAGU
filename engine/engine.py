@@ -8,28 +8,13 @@
 @Desc    : 训练引擎
 @Usage   : pycocotools
 """
-# -*- coding: utf-8 -*-
-"""
-@Project : AAGU
-@FileName: train_engine.py
-@Time    : 2025/5/21 下午4:01
-@Author  : ZhouFei
-@Email   : zhoufei.net@gmail.com
-@Desc    : 训练引擎 - 参考D-FINE实现
-@Usage   : pycocotools
-"""
 import math
 import sys
 
 import numpy as np
 import torch
 from tqdm import tqdm
-
-
-# 你需要从D-FINE或类似库中导入这些组件
-# from ..data import CocoEvaluator
-# from ..misc import MetricLogger, SmoothedValue, dist_utils
-# from .validator import Validator, scale_boxes
+from models.dfine.box_ops import box_cxcywh_to_xyxy
 
 
 def compute_iou(box1, box2):
@@ -92,76 +77,79 @@ def compute_ap_single_class(pred_boxes, pred_scores, gt_boxes, iou_threshold=0.5
     return ap.item()
 
 
-def compute_detection_metrics(outputs, targets):
-    """计算检测指标"""
+def compute_batch_detection_metrics(gt_all, preds_all):
+    """计算批量检测指标"""
     all_ap_50 = []
     all_ap_50_95 = []
     all_iou_50 = []
 
-    batch_size = len(targets)
-    pred_boxes = outputs.get('pred_boxes', None)
-    pred_scores = outputs.get('pred_scores', None)
-    pred_labels = outputs.get('pred_labels', None)
-
-    if pred_boxes is None or pred_scores is None:
-        return 0.0, 0.0, 0.0
-
-    for i in range(batch_size):
-        # 获取预测结果
-        if len(pred_boxes.shape) == 3:  # [batch, num_queries, 4]
-            p_boxes = pred_boxes[i]
-            p_scores = pred_scores[i] if pred_scores is not None else torch.ones(pred_boxes.shape[1])
-            p_labels = pred_labels[i] if pred_labels is not None else torch.zeros(pred_boxes.shape[1])
-        else:
-            # 如果是经过后处理的结果，需要根据具体格式调整
-            p_boxes = pred_boxes
-            p_scores = pred_scores if pred_scores is not None else torch.ones(len(pred_boxes))
-            p_labels = pred_labels if pred_labels is not None else torch.zeros(len(pred_boxes))
-
-        # 获取真实标签
-        gt_boxes = targets[i]['boxes']  # 应该已经是xyxy格式
-        gt_labels = targets[i]['labels']
+    for gt, pred in zip(gt_all, preds_all):
+        gt_boxes = gt["boxes"]
+        gt_labels = gt["labels"]
+        pred_boxes = pred["boxes"]
+        pred_scores = pred["scores"]
+        pred_labels = pred["labels"]
 
         if len(gt_boxes) == 0:
             continue
 
-        # 过滤有效预测（基于置信度阈值）
-        valid_mask = p_scores > 0.1  # 可调整阈值
-        p_boxes = p_boxes[valid_mask]
-        p_scores = p_scores[valid_mask]
-        p_labels = p_labels[valid_mask]
-
-        if len(p_boxes) == 0:
+        if len(pred_boxes) == 0:
             all_ap_50.append(0.0)
             all_ap_50_95.append(0.0)
             all_iou_50.append(0.0)
             continue
 
-        # 计算AP@0.5
-        ap_50 = compute_ap_single_class(p_boxes, p_scores, gt_boxes, 0.5)
-        all_ap_50.append(ap_50)
+        # 按类别分别计算AP
+        unique_labels = torch.unique(gt_labels)
+        class_ap_50 = []
+        class_ap_50_95 = []
+        class_iou_50 = []
 
-        # 计算AP@0.5:0.95 (简化版本，只计算几个IoU阈值)
-        ap_list = []
-        for iou_thresh in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]:
-            ap = compute_ap_single_class(p_boxes, p_scores, gt_boxes, iou_thresh)
-            ap_list.append(ap)
-        all_ap_50_95.append(np.mean(ap_list))
+        for label in unique_labels:
+            # 该类别的真实框
+            gt_mask = gt_labels == label
+            gt_class_boxes = gt_boxes[gt_mask]
 
-        # 计算IoU@0.5 (最大IoU)
-        if len(p_boxes) > 0 and len(gt_boxes) > 0:
-            ious = compute_iou(p_boxes, gt_boxes)
-            max_iou = torch.max(ious).item()
-            all_iou_50.append(max_iou)
-        else:
-            all_iou_50.append(0.0)
+            # 该类别的预测框
+            pred_mask = pred_labels == label
+            if not pred_mask.any():
+                class_ap_50.append(0.0)
+                class_ap_50_95.append(0.0)
+                class_iou_50.append(0.0)
+                continue
 
-    avg_ap_50 = np.mean(all_ap_50) if all_ap_50 else 0.0
-    avg_ap_50_95 = np.mean(all_ap_50_95) if all_ap_50_95 else 0.0
-    avg_iou_50 = np.mean(all_iou_50) if all_iou_50 else 0.0
+            pred_class_boxes = pred_boxes[pred_mask]
+            pred_class_scores = pred_scores[pred_mask]
 
-    return avg_ap_50, avg_iou_50, avg_ap_50_95
+            # 计算该类别的AP
+            ap_50 = compute_ap_single_class(pred_class_boxes, pred_class_scores, gt_class_boxes, 0.5)
+            class_ap_50.append(ap_50)
 
+            # 计算AP@0.5:0.95
+            ap_list = []
+            for iou_thresh in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]:
+                ap = compute_ap_single_class(pred_class_boxes, pred_class_scores, gt_class_boxes, iou_thresh)
+                ap_list.append(ap)
+            class_ap_50_95.append(np.mean(ap_list))
+
+            # 计算最大IoU
+            if len(pred_class_boxes) > 0 and len(gt_class_boxes) > 0:
+                ious = compute_iou(pred_class_boxes, gt_class_boxes)
+                max_iou = torch.max(ious).item()
+                class_iou_50.append(max_iou)
+            else:
+                class_iou_50.append(0.0)
+
+        # 取所有类别的平均值
+        all_ap_50.append(np.mean(class_ap_50) if class_ap_50 else 0.0)
+        all_ap_50_95.append(np.mean(class_ap_50_95) if class_ap_50_95 else 0.0)
+        all_iou_50.append(np.mean(class_iou_50) if class_iou_50 else 0.0)
+
+    return {
+        'ap': np.mean(all_ap_50) if all_ap_50 else 0.0,
+        'iou_50': np.mean(all_iou_50) if all_iou_50 else 0.0,
+        'iou_50_95': np.mean(all_ap_50_95) if all_ap_50_95 else 0.0
+    }
 
 def train(
         model: torch.nn.Module,
@@ -273,7 +261,7 @@ def evaluate(
         epoch: int,
         **kwargs
 ):
-    """评估模型 - 参考D-FINE实现，支持DetNMSPostProcessor"""
+    """评估模型 - 支持cxcywh格式的框"""
     model.eval()
     criterion.eval()
     if postprocessor is not None:
@@ -295,7 +283,7 @@ def evaluate(
 
             outputs = model(rgb_images, tir_images)
 
-            # 计算损失（只在训练模式下需要metas）
+            # 计算损失
             metas = dict(epoch=epoch, step=batch_idx)
             loss_dict = criterion(outputs, targets, **metas)
             loss = sum(loss_dict.values())
@@ -308,7 +296,6 @@ def evaluate(
                 if "size" in targets[0]:
                     orig_target_sizes = torch.stack([t["size"] for t in targets], dim=0)
                 else:
-                    # 如果没有size，使用当前图像尺寸
                     h, w = rgb_images.shape[-2:]
                     orig_target_sizes = torch.tensor([[h, w]] * len(targets), device=device)
 
@@ -319,17 +306,22 @@ def evaluate(
                 for idx, (target, result) in enumerate(zip(targets, results)):
                     # 真实标签 - 确保boxes格式正确
                     gt_boxes = target["boxes"]
-                    if gt_boxes.shape[0] > 0:  # 只有当存在真实框时才添加
+                    if gt_boxes.shape[0] > 0:
+                        # 将cxcywh转换为xyxy
+                        gt_boxes_xyxy = box_cxcywh_to_xyxy(gt_boxes)
+                        # 使用target的size将归一化坐标转换为实际像素坐标
+                        gt_boxes_xyxy[:, 0::2] *= target["size"][1]  # 宽度缩放
+                        gt_boxes_xyxy[:, 1::2] *= target["size"][0]  # 高度缩放
                         gt_all.append({
-                            "boxes": gt_boxes,  # 应该已经是xyxy格式
+                            "boxes": gt_boxes_xyxy,  # 转换为非归一化的xyxy格式
                             "labels": target["labels"],
                         })
 
-                        # 预测结果 - DetNMSPostProcessor输出已经是xyxy格式
+                        # 预测结果已经是非归一化的xyxy格式
                         preds_all.append({
-                            "boxes": result["boxes"],  # xyxy格式
-                            "labels": result["labels"],  # 类别标签
-                            "scores": result["scores"]  # 置信度分数
+                            "boxes": result["boxes"],
+                            "labels": result["labels"],
+                            "scores": result["scores"]
                         })
 
             pbar.set_postfix({'loss': total_loss / total_samples})
@@ -338,7 +330,6 @@ def evaluate(
 
     # 计算整体指标
     if len(gt_all) > 0 and len(preds_all) > 0:
-        # 使用批量评估函数
         avg_metrics = compute_batch_detection_metrics(gt_all, preds_all)
     else:
         avg_metrics = {'ap': 0.0, 'iou_50': 0.0, 'iou_50_95': 0.0}

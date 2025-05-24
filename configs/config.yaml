@@ -15,13 +15,13 @@ data:
     random_rotation: 0.0        # 最大旋转角度 ±10°
     random_resize: 0.0          # 缩放比例范围 ±20%
     color_jitter: 0.0           # 颜色扰动强度 (brightness, contrast, saturation)
-    gamma_correction: 0.0       # Gamma 校正概率
+    gamma_correction: 0.2       # Gamma 校正概率
     random_erase: 0.0           # 随机擦除概率
-    blur_sigma: 0.0             # 高斯模糊（暂时关闭）
+    blur_sigma: 0.3             # 高斯模糊（暂时关闭）
 
 model:
   num_classes: 1
-  backbone_name: "hgnetv2"  # ['swint', 'resnet50', 'hgnetv2']
+  backbone_name: "swint"  # ['swint', 'resnet50', 'hgnetv2']
   pretrained: True  # 是否使用BackBone预训练权重
   img_size: [512, 640]
   out_dims: [256, 512, 1024]
@@ -66,7 +66,7 @@ training:
   lr_drop: 60
   gamma: 0.1
   lr_backbone: 0.00001
-  batch_size: 32
+  batch_size: 16
   start_eval: 1
   eval_freq: 1
   threshold: 0.5

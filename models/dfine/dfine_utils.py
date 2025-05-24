@@ -30,11 +30,11 @@ def weighting_function(reg_max, up, reg_scale, deploy=False):
         left_values = [-((step) ** i) + 1 for i in range(reg_max // 2 - 1, 0, -1)]
         right_values = [(step) ** i - 1 for i in range(1, reg_max // 2)]
         values = (
-            [-upper_bound2]
-            + left_values
-            + [torch.zeros_like(up[0][None])]
-            + right_values
-            + [upper_bound2]
+                [-upper_bound2]
+                + left_values
+                + [torch.zeros_like(up[0][None])]
+                + right_values
+                + [upper_bound2]
         )
         return torch.tensor(values, dtype=up.dtype, device=up.device)
     else:
@@ -44,11 +44,11 @@ def weighting_function(reg_max, up, reg_scale, deploy=False):
         left_values = [-((step) ** i) + 1 for i in range(reg_max // 2 - 1, 0, -1)]
         right_values = [(step) ** i - 1 for i in range(1, reg_max // 2)]
         values = (
-            [-upper_bound2]
-            + left_values
-            + [torch.zeros_like(up[0][None])]
-            + right_values
-            + [upper_bound2]
+                [-upper_bound2]
+                + left_values
+                + [torch.zeros_like(up[0][None])]
+                + right_values
+                + [upper_bound2]
         )
         return torch.cat(values, 0)
 
@@ -140,6 +140,7 @@ def distance2bbox(points, distance, reg_scale):
     bboxes = torch.stack([x1, y1, x2, y2], -1)
 
     return box_xyxy_to_cxcywh(bboxes)
+
 
 def bbox2distance(points, bbox, reg_max, reg_scale, up, eps=0.1):
     """
