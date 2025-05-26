@@ -1,7 +1,7 @@
 import torch
 from .transforms import Transforms
 from .loading_data import loading_data, DeNormalize
-from .crowds_dataset import Crowds
+from .crowds_dataset import Crowds, mscoco_category2name, mscoco_category2label, mscoco_label2category
 from utils import collate_fn_crowds
 from torch.utils.data import DataLoader
 import logging

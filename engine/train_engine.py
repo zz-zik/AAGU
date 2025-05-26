@@ -78,7 +78,9 @@ class TrainingEngine:
         # **关键部分：配置PostProcessor**
         self.postprocessor = DFINEPostProcessor(
             num_classes=1,  # 类别数
-            num_top_queries=300
+            use_focal_loss=True,  # 是否使用Focal Loss
+            num_top_queries=300,
+            # remap_mscoco_category=True
         )
         self.postprocessor.to(self.device)
 
@@ -192,14 +194,11 @@ class TrainingEngine:
                 self.writer.add_scalar('metric/IOU_50_95', metrics['iou_50_95'], epoch)
 
                 # Update validation results
-                self.results_df.loc[epoch, ['val_loss', 'val_ap', 'val_iou_50', 'val_iou_50_95']] = [
-                    metrics['loss'], metrics['ap'], metrics['iou_50'], metrics['iou_50_95']
+                self.results_df.loc[epoch, ['val_loss', 'val_iou_50', 'val_iou_50_95']] = [
+                    metrics['loss'], metrics['iou_50'], metrics['iou_50_95']
                 ]
 
                 # Save best model
-                if metrics['ap'] > self.best_ap:
-                    self.best_ap = metrics['ap']
-                    self._save_model(epoch, 0, is_best=True)
                 if metrics['iou_50'] > self.best_iou_50:
                     self.best_iou_50 = metrics['iou_50']
                     self._save_model(epoch, 0, is_best=True)

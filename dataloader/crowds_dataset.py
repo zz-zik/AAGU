@@ -169,7 +169,9 @@ class Crowds(Dataset):
             "boxes": torch.tensor([], dtype=torch.float32),
             "labels": torch.tensor([], dtype=torch.int64),
             "image_id": torch.tensor(-1, dtype=torch.int64),
-            "size": torch.tensor([-1, -1], dtype=torch.int64)
+            "rgb_path": rgb_img_path,
+            "tir_path": tir_img_path,
+            "orig_size": torch.tensor([-1, -1], dtype=torch.int64)
         }
 
         height, width = rgb_img.shape[1], rgb_img.shape[2]
@@ -221,10 +223,10 @@ class Crowds(Dataset):
             target["boxes"] = torch.empty((0, 4), dtype=torch.float32)
             target["labels"] = torch.empty((0,), dtype=torch.int64)
 
-        # 添加 image_id 和 size 字段
+        # 添加 image_id 和 orig_size 字段
         img_id = int(os.path.splitext(filename)[0]) if self.label_format == "coco" else index
         target["image_id"] = torch.tensor(img_id, dtype=torch.int64)
-        target["size"] = torch.tensor([height, width], dtype=torch.int64)
+        target["orig_size"] = torch.tensor([width, height], dtype=torch.int64)
 
         # Step 3: 数据增强
         if self.transform:
@@ -271,6 +273,14 @@ def sort_filenames_numerically(filenames):
         return (tuple(numbers), filename) if numbers else ((), filename)
 
     return sorted(filenames, key=numeric_key)
+
+
+mscoco_category2name = {
+    1: "people",
+}
+
+mscoco_category2label = {k: i for i, k in enumerate(mscoco_category2name.keys())}
+mscoco_label2category = {v: k for k, v in mscoco_category2label.items()}
 
 
 if __name__ == '__main__':

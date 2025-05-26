@@ -14,6 +14,8 @@ import sys
 import numpy as np
 import torch
 from tqdm import tqdm
+
+from dataloader import mscoco_category2label
 from models.dfine.box_ops import box_cxcywh_to_xyxy
 
 
@@ -116,7 +118,6 @@ def compute_batch_detection_metrics(gt_all, preds_all):
 
         # 按类别分别计算AP
         unique_labels = torch.unique(gt_labels)
-        class_ap_50 = []
         class_ap_50_95 = []
         class_iou_50 = []
 
@@ -128,7 +129,6 @@ def compute_batch_detection_metrics(gt_all, preds_all):
             # 该类别的预测框
             pred_mask = pred_labels == label
             if not pred_mask.any():
-                class_ap_50.append(0.0)
                 class_ap_50_95.append(0.0)
                 class_iou_50.append(0.0)
                 continue
@@ -136,9 +136,6 @@ def compute_batch_detection_metrics(gt_all, preds_all):
             pred_class_boxes = pred_boxes[pred_mask]
             pred_class_scores = pred_scores[pred_mask]
 
-            # 计算该类别的AP
-            ap_50 = compute_ap_single_class(pred_class_boxes, pred_class_scores, gt_class_boxes, 0.5)
-            class_ap_50.append(ap_50)
 
             # 计算AP@0.5:0.95
             ap_list = []
@@ -156,12 +153,10 @@ def compute_batch_detection_metrics(gt_all, preds_all):
                 class_iou_50.append(0.0)
 
         # 取所有类别的平均值
-        all_ap_50.append(np.mean(class_ap_50) if class_ap_50 else 0.0)
         all_ap_50_95.append(np.mean(class_ap_50_95) if class_ap_50_95 else 0.0)
         all_iou_50.append(np.mean(class_iou_50) if class_iou_50 else 0.0)
 
     return {
-        'ap': np.mean(all_ap_50) if all_ap_50 else 0.0,
         'iou_50': np.mean(all_iou_50) if all_iou_50 else 0.0,
         'iou_50_95': np.mean(all_ap_50_95) if all_ap_50_95 else 0.0
     }
@@ -308,11 +303,11 @@ def evaluate(
             # 后处理输出
             if postprocessor is not None:
                 # 获取原始图像尺寸
-                if "size" in targets[0]:
-                    orig_target_sizes = torch.stack([t["size"] for t in targets], dim=0)
+                if "orig_size" in targets[0]:
+                    orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
                 else:
                     h, w = rgb_images.shape[-2:]
-                    orig_target_sizes = torch.tensor([[h, w]] * len(targets), device=device)
+                    orig_target_sizes = torch.tensor([[w, h]] * len(targets), device=device)
 
                 # 使用DetNMSPostProcessor进行后处理
                 results = postprocessor(outputs, orig_target_sizes)
@@ -325,13 +320,17 @@ def evaluate(
                         # 将cxcywh转换为xyxy
                         gt_boxes_xyxy = box_cxcywh_to_xyxy(gt_boxes)
                         # 使用target的size将归一化坐标转换为实际像素坐标
-                        gt_boxes_xyxy[:, 0::2] *= target["size"][1]  # 宽度缩放
-                        gt_boxes_xyxy[:, 1::2] *= target["size"][0]  # 高度缩放
+                        gt_boxes_xyxy[:, 0::2] *= target["orig_size"][0]  # 宽度缩放
+                        gt_boxes_xyxy[:, 1::2] *= target["orig_size"][1]  # 高度缩放
                         gt_all.append({
                             "boxes": gt_boxes_xyxy,  # 转换为非归一化的xyxy格式
                             "labels": target["labels"],
                         })
-
+                        # labels = (
+                        #     torch.tensor([mscoco_category2label[int(x.item())] for x in result["labels"].flatten()])
+                        #     .to(result["labels"].device)
+                        #     .reshape(result["labels"].shape)
+                        # ) if postprocessor.remap_mscoco_category else result["labels"]
                         # 预测结果已经是非归一化的xyxy格式
                         preds_all.append({
                             "boxes": result["boxes"],
@@ -347,7 +346,7 @@ def evaluate(
     if len(gt_all) > 0 and len(preds_all) > 0:
         avg_metrics = compute_batch_detection_metrics(gt_all, preds_all)
     else:
-        avg_metrics = {'ap': 0.0, 'iou_50': 0.0, 'iou_50_95': 0.0}
+        avg_metrics = {'iou_50': 0.0, 'iou_50_95': 0.0}
 
     metrics = {
         'loss': val_loss,
