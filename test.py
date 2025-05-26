@@ -15,7 +15,7 @@ import pprint
 import time
 
 from models.dfine import DFINEPostProcessor
-from utils import get_args_config, get_output_dir, setup_logging, load_config
+from utils import get_args_config, get_output_dir, setup_logging, load_config, collate_fn_crowds
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
     # Build test dataset
     transforms_val = Transforms(train=False, **cfg.data.transforms.to_dict())
     test_dataset = Crowds(transform=transforms_val, test=True, **cfg.data.to_dict())
-    test_loader = DataLoader(test_dataset, batch_size=cfg.test.batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=cfg.test.batch_size, collate_fn=collate_fn_crowds, shuffle=False)
 
     # Run evaluation
     logger.info("Start testing...")

@@ -486,8 +486,9 @@ def save_image(image_tensor, result, output_dir, image_name, denorm, modal_name=
     # 张量转 NumPy 图像
     image_np = tensor_to_image(image)
 
+    result = {k: v.cpu() for k, v in result.items()}
     # 绘制边界框
-    image_with_boxes = draw_boxes(image_np.copy(), result.cpu())
+    image_with_boxes = draw_boxes(image_np.copy(), result)
 
     # 构建路径并保存
     output_subdir = os.path.join(output_dir, modal_name)
