@@ -75,8 +75,7 @@ test:
   img_dirs: './data'
   batch_size: 1
   device: 'cuda:1'
-  save_dir: "./work_dirs"
+  output_dir: "./work_dirs"
   name: "test"
-  weight_path: "./work_dirs/train_3/checkpoints/best_iou.pth"
+  weights_dir: "./work_dirs/train/checkpoints/best.pth"
   show: True
-  show_overlay: False

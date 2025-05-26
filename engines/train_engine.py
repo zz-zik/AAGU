@@ -25,7 +25,7 @@ from dataloader import build_dataset
 from models import build_model
 from utils import get_output_dir
 import warnings
-from engine import train, evaluate
+from engines import train, evaluate
 
 warnings.filterwarnings('ignore')
 
@@ -108,7 +108,7 @@ class TrainingEngine:
         self.csv_file_path = os.path.join(str(self.output_dir), 'result.csv')
         self.results_df = pd.DataFrame(columns=[
             'epoch', 'train_loss',
-            'val_loss', 'val_ap', 'val_iou_50', 'val_iou_50_95'
+            'val_loss', 'val_iou_50', 'val_iou_50_95'
         ])
 
         self.checkpoint_dir = os.path.join(str(self.output_dir), 'checkpoints')

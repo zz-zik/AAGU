@@ -70,12 +70,10 @@ def draw_boxes(image, boxes, labels=None, label_map=None, color=(0, 255, 0), thi
     return image
 
 
-
 # 示例 label_map（根据你的类别修改）
 label_map = {
     0: 'people',
 }
-
 
 if __name__ == '__main__':
     from utils import load_config

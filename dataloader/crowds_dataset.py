@@ -171,6 +171,7 @@ class Crowds(Dataset):
             "image_id": torch.tensor(-1, dtype=torch.int64),
             "rgb_path": rgb_img_path,
             "tir_path": tir_img_path,
+            "image_name": filename,
             "orig_size": torch.tensor([-1, -1], dtype=torch.int64)
         }
 
@@ -232,10 +233,7 @@ class Crowds(Dataset):
         if self.transform:
             rgb_img, tir_img, target = self.transform(rgb_img, tir_img, target)
 
-        if self.test and label_path is None:
-            return rgb_img, tir_img
-        else:
-            return rgb_img, tir_img, target
+        return rgb_img, tir_img, target
 
     @staticmethod
     def sort_filenames_numerically(filenames):
