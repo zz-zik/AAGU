@@ -3,7 +3,6 @@ Copied from RT-DETR (https://github.com/lyuwenyu/RT-DETR)
 Copyright(c) 2023 lyuwenyu. All Rights Reserved.
 """
 
-
 import copy
 
 import torch
@@ -21,16 +20,16 @@ class DFINECriterion(nn.Module):
     """This class computes the loss for D-FINE."""
 
     def __init__(
-        self,
-        matcher,
-        weight_dict,
-        losses,
-        alpha=0.2,
-        gamma=2.0,
-        num_classes=80,
-        reg_max=32,
-        boxes_weight_format=None,
-        share_matched_indices=False,
+            self,
+            matcher,
+            weight_dict,
+            losses,
+            alpha=0.2,
+            gamma=2.0,
+            num_classes=80,
+            reg_max=32,
+            boxes_weight_format=None,
+            share_matched_indices=False,
     ):
         """Create the criterion.
         Parameters:
@@ -73,16 +72,11 @@ class DFINECriterion(nn.Module):
         return {"loss_focal": loss}
 
     def loss_labels_vfl(self, outputs, targets, indices, num_boxes, values=None):
-        assert "pred_logits" in outputs
+        assert "pred_boxes" in outputs
         idx = self._get_src_permutation_idx(indices)
-
         if values is None:
             src_boxes = outputs["pred_boxes"][idx]
             target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
-            if len(target_boxes) == 0:
-                return {"loss_vfl": outputs["pred_logits"].sum() * 0}
-
             ious, _ = box_iou(box_cxcywh_to_xyxy(src_boxes), box_cxcywh_to_xyxy(target_boxes))
             ious = torch.diag(ious).detach()
         else:
@@ -134,6 +128,7 @@ class DFINECriterion(nn.Module):
         losses["loss_giou"] = loss_giou.sum() / num_boxes
 
         return losses
+
 
     def loss_local(self, outputs, targets, indices, num_boxes, T=5):
         """Compute Fine-Grained Localization (FGL) Loss
@@ -204,18 +199,18 @@ class DFINECriterion(nn.Module):
                     )
 
                     loss_match_local = (
-                        weight_targets_local
-                        * (T**2)
-                        * (
-                            nn.KLDivLoss(reduction="none")(
-                                F.log_softmax(pred_corners / T, dim=1),
-                                F.softmax(target_corners.detach() / T, dim=1),
-                            )
-                        ).sum(-1)
+                            weight_targets_local
+                            * (T ** 2)
+                            * (
+                                nn.KLDivLoss(reduction="none")(
+                                    F.log_softmax(pred_corners / T, dim=1),
+                                    F.softmax(target_corners.detach() / T, dim=1),
+                                )
+                            ).sum(-1)
                     )
                     if "is_dn" not in outputs:
                         batch_scale = (
-                            8 / outputs["pred_boxes"].shape[0]
+                                8 / outputs["pred_boxes"].shape[0]
                         )  # Avoid the influence of batch size per GPU
                         self.num_pos, self.num_neg = (
                             (mask.sum() * batch_scale) ** 0.5,
@@ -224,8 +219,8 @@ class DFINECriterion(nn.Module):
                     loss_match_local1 = loss_match_local[mask].mean() if mask.any() else 0
                     loss_match_local2 = loss_match_local[~mask].mean() if (~mask).any() else 0
                     losses["loss_ddf"] = (
-                        loss_match_local1 * self.num_pos + loss_match_local2 * self.num_neg
-                    ) / (self.num_pos + self.num_neg)
+                                                 loss_match_local1 * self.num_pos + loss_match_local2 * self.num_neg
+                                         ) / (self.num_pos + self.num_neg)
 
         return losses
 
@@ -495,7 +490,7 @@ class DFINECriterion(nn.Module):
         return torch.abs(loss)
 
     def unimodal_distribution_focal_loss(
-        self, pred, label, weight_right, weight_left, weight=None, reduction="sum", avg_factor=None
+            self, pred, label, weight_right, weight_left, weight=None, reduction="sum", avg_factor=None
     ):
         dis_left = label.long()
         dis_right = dis_left + 1

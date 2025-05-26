@@ -17,6 +17,21 @@ from tqdm import tqdm
 from models.dfine.box_ops import box_cxcywh_to_xyxy
 
 
+def scale_boxes(boxes, orig_shape, resized_shape):
+    """
+    boxes in format: [x1, y1, x2, y2], absolute values
+    orig_shape: [height, width]
+    resized_shape: [height, width]
+    """
+    scale_x = orig_shape[1] / resized_shape[1]
+    scale_y = orig_shape[0] / resized_shape[0]
+    boxes[:, 0] *= scale_x
+    boxes[:, 2] *= scale_x
+    boxes[:, 1] *= scale_y
+    boxes[:, 3] *= scale_y
+    return boxes
+
+
 def compute_iou(box1, box2):
     """计算两个box的IoU，输入格式为xyxy"""
     # box1: [N, 4], box2: [M, 4]
@@ -415,4 +430,3 @@ def compute_batch_detection_metrics(gt_all, preds_all):
         'iou_50': np.mean(all_iou_50) if all_iou_50 else 0.0,
         'iou_50_95': np.mean(all_ap_50_95) if all_ap_50_95 else 0.0
     }
-

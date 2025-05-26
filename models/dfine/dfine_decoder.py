@@ -26,6 +26,7 @@ from .util import (
     inverse_sigmoid,
 )
 
+
 __all__ = ["DFINETransformer"]
 
 
@@ -455,6 +456,7 @@ class TransformerDecoder(nn.Module):
         )
 
 
+
 class DFINETransformer(nn.Module):
 
     def __init__(
@@ -475,7 +477,7 @@ class DFINETransformer(nn.Module):
         label_noise_ratio=0.5,
         box_noise_scale=1.0,
         learn_query_content=False,
-        eval_spatial_size=[640, 512],
+        eval_spatial_size=None,
         eval_idx=-1,
         eps=1e-2,
         aux_loss=True,
@@ -567,7 +569,7 @@ class DFINETransformer(nn.Module):
 
         # if num_select_queries != self.num_queries:
         #     layer = TransformerEncoderLayer(hidden_dim, nhead, dim_feedforward, activation='gelu')
-        #     self.backbones = TransformerEncoder(layer, 1)
+        #     self.encoder = TransformerEncoder(layer, 1)
 
         self.enc_output = nn.Sequential(
             OrderedDict(
@@ -609,12 +611,12 @@ class DFINETransformer(nn.Module):
         )
         self.integral = Integral(self.reg_max)
 
-        # init backbones output anchors and valid_mask
+        # init encoder output anchors and valid_mask
         if self.eval_spatial_size:
             anchors, valid_mask = self._generate_anchors()
             self.register_buffer("anchors", anchors)
             self.register_buffer("valid_mask", valid_mask)
-        # init backbones output anchors and valid_mask
+        # init encoder output anchors and valid_mask
         if self.eval_spatial_size:
             self.anchors, self.valid_mask = self._generate_anchors()
 
@@ -711,7 +713,7 @@ class DFINETransformer(nn.Module):
                 else:
                     proj_feats.append(self.input_proj[i](proj_feats[-1]))
 
-        # get backbones inputs
+        # get encoder inputs
         feat_flatten = []
         spatial_shapes = []
         for i, feat in enumerate(proj_feats):
@@ -897,6 +899,7 @@ class DFINETransformer(nn.Module):
             out = {"pred_logits": out_logits[-1], "pred_boxes": out_bboxes[-1]}
 
         # if self.training and self.aux_loss:
+        # TODO:
         if self.aux_loss:
             out["aux_outputs"] = self._set_aux_loss2(
                 out_logits[:-1],

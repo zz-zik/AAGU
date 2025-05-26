@@ -18,7 +18,7 @@ import time
 import datetime
 from tensorboardX import SummaryWriter
 
-from models.postprocessor import DetNMSPostProcessor
+from models.dfine import DFINEPostProcessor
 from optim.optim import build_lr_scheduler, build_optimizer
 from utils import setup_logging, get_environment_info, get_rank
 from dataloader import build_dataset
@@ -76,12 +76,9 @@ class TrainingEngine:
         self.logger.info(optimizer_info)
 
         # **关键部分：配置PostProcessor**
-        self.postprocessor = DetNMSPostProcessor(
-            iou_threshold=0.7,  # NMS的IoU阈值
-            score_threshold=0.01,  # 置信度阈值，低于此值的预测将被过滤
-            keep_topk=300,  # 保留的最大检测框数量
-            box_fmt="cxcywh",  # 你的boxes格式，根据你的模型输出调整
-            logit_fmt="sigmoid"  # logits的激活函数，可选："sigmoid", "softmax", None
+        self.postprocessor = DFINEPostProcessor(
+            num_classes=1,  # 类别数
+            num_top_queries=300
         )
         self.postprocessor.to(self.device)
 

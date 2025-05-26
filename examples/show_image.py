@@ -22,7 +22,7 @@ def tensor_to_image(img_tensor):
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # RGB -> BGR for OpenCV
 
 
-def draw_boxes(image, boxes, labels=None, label_map=None, color=(0, 255, 0), thickness=2):
+def draw_boxes(image, boxes, labels=None, label_map=None, color=(0, 255, 0), thickness=2, box_fmt='cxcywh'):
     """
     在图像上绘制边界框
     Args:
@@ -31,24 +31,44 @@ def draw_boxes(image, boxes, labels=None, label_map=None, color=(0, 255, 0), thi
         labels: Tensor of shape (N,)
         label_map: Optional dict {label_id: label_name}
         color: BGR 颜色
+        thickness: 线条粗细
+        box_fmt: 边界框格式，支持 'xyxy' (左上/右下) 或 'cxcywh' (中心 + 宽高)
     Returns:
         image with boxes
     """
     h, w, _ = image.shape
     boxes_abs = boxes.clone()
-    boxes_abs[:, [0, 2]] *= w  # x
-    boxes_abs[:, [1, 3]] *= h  # y
-    boxes_abs = boxes_abs.round().int()
 
-    for i, box in enumerate(boxes_abs):
-        x1, y1, x2, y2 = box.tolist()
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
+    if box_fmt == 'cxcywh':
+        # 转换 cxcywh 为 x1, y1, x2, y2
+        cx = boxes_abs[:, 0] * w
+        cy = boxes_abs[:, 1] * h
+        cw = boxes_abs[:, 2] * w
+        ch = boxes_abs[:, 3] * h
+        x1 = (cx - cw / 2).round().int().tolist()
+        y1 = (cy - ch / 2).round().int().tolist()
+        x2 = (cx + cw / 2).round().int().tolist()
+        y2 = (cy + ch / 2).round().int().tolist()
+    elif box_fmt == 'xyxy':
+        # 直接使用归一化坐标并转换为绝对坐标
+        x1 = (boxes_abs[:, 0] * w).round().int().tolist()
+        y1 = (boxes_abs[:, 1] * h).round().int().tolist()
+        x2 = (boxes_abs[:, 2] * w).round().int().tolist()
+        y2 = (boxes_abs[:, 3] * h).round().int().tolist()
+    else:
+        raise ValueError(f"不支持的边界框格式: {box_fmt}")
+
+    for i in range(len(x1)):
+        pt1 = (x1[i], y1[i])
+        pt2 = (x2[i], y2[i])
+        cv2.rectangle(image, pt1, pt2, color, thickness)
 
         if labels is not None and label_map:
             label = int(labels[i])
             text = label_map.get(label, f'{label}')
-            cv2.putText(image, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, thickness)
+            cv2.putText(image, text, (x1[i], y1[i] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, thickness)
     return image
+
 
 
 # 示例 label_map（根据你的类别修改）
@@ -71,11 +91,14 @@ if __name__ == '__main__':
     img_rgb, img_tir, target = train_dataset[idx]
 
     # 转换为图像
-    denorm_rgb = DeNormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    denorm_tir = DeNormalize(mean=[0.492, 0.168, 0.430], std=[0.317, 0.174, 0.191])
+    denorm_rgb = DeNormalize(mean=[0.341, 0.355, 0.258], std=[0.131, 0.135, 0.118])
+    denorm_tir = DeNormalize(mean=[0.615, 0.116, 0.374], std=[0.236, 0.156, 0.188])
 
-    rgb_img = tensor_to_image(denorm_rgb(img_rgb.clone()))
-    tir_img = tensor_to_image(denorm_tir(img_tir.clone()))
+    # rgb_img = tensor_to_image(denorm_rgb(img_rgb.clone()))
+    # tir_img = tensor_to_image(denorm_tir(img_tir.clone()))
+
+    rgb_img = tensor_to_image(img_rgb.clone())
+    tir_img = tensor_to_image(img_tir.clone())
 
     # 绘制边界框
     boxes = target['boxes']

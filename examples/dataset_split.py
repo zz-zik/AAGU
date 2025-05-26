@@ -147,7 +147,7 @@ def process_dataset(src_dir, dst_dir, labels):
     shutil.copytree(os.path.join(src_dir, 'test', 'RGB'), os.path.join(dst_dir, 'test', 'RGB'), dirs_exist_ok=True)
     shutil.copytree(os.path.join(src_dir, 'test', 'TIR'), os.path.join(dst_dir, 'test', 'TIR'), dirs_exist_ok=True)
 
-    print("数据集处理完成")
+    print("✅数据集处理完成")
 
 
 if __name__ == "__main__":

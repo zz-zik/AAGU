@@ -19,23 +19,36 @@ from torchvision.transforms import functional as F, Compose, Normalize
 class Transforms(nn.Module):
     """根据配置参数动态选择和组合数据增强操作"""
 
-    def __init__(self, train=True, box_fmt='xyxy', **kwargs):
+    def __init__(self, train=True, box_fmt='cxcywh', **kwargs):
         super().__init__()
         self.train = train
         self.box_fmt = box_fmt
 
         # 定义标准化变换
+        # self.rgb_transform = Compose([
+        #     Normalize(
+        #         mean=[0.485, 0.456, 0.406],
+        #         std=[0.229, 0.224, 0.225]
+        #     ),
+        # ])
+        #
+        # self.tir_transform = Compose([
+        #     Normalize(
+        #         mean=[0.492, 0.168, 0.430],
+        #         std=[0.317, 0.174, 0.191]
+        #     ),
+        # ])
         self.rgb_transform = Compose([
             Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]
+                mean=[0.341, 0.355, 0.258],
+                std=[0.131, 0.135, 0.118]
             ),
         ])
 
         self.tir_transform = Compose([
             Normalize(
-                mean=[0.492, 0.168, 0.430],
-                std=[0.317, 0.174, 0.191]
+                mean=[0.615, 0.116, 0.374],
+                std=[0.236, 0.156, 0.188]
             ),
         ])
 
@@ -72,21 +85,14 @@ class Transforms(nn.Module):
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
-        """应用数据增强操作
-        Args:
-            rgb (torch.Tensor): RGB 图像
-            tir (torch.Tensor): TIR 图像
-            target (Dict[str, Any]): 目标数据
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, Dict[str, Any]]: 增强后的 RGB 图像、TIR 图像和目标数据
-        """
+
         if not isinstance(rgb, torch.Tensor) and not isinstance(tir, torch.Tensor):
             rgb = torch.from_numpy(rgb).permute(2, 0, 1).float()
             tir = torch.from_numpy(tir).permute(2, 0, 1).float()
 
         # 如果是 cxcywh 格式，先转换成 xyxy 以便统一处理
-        original_boxes = target["boxes"]
-        if self.box_fmt == 'cxcywh':
+        original_boxes = target.get("boxes", torch.empty((0, 4), device=rgb.device))
+        if self.box_fmt == 'cxcywh' and len(original_boxes) > 0:
             boxes_xyxy = cxcywh_to_xyxy(original_boxes)
             target["boxes"] = boxes_xyxy
 
@@ -96,7 +102,7 @@ class Transforms(nn.Module):
                 rgb, tir, target = transform(rgb, tir, target)
 
         # 恢复原始的 box_fmt 格式（如 cxcywh）
-        if self.box_fmt == 'cxcywh':
+        if self.box_fmt == 'cxcywh' and len(target.get("boxes", [])) > 0:
             target["boxes"] = xyxy_to_cxcywh(target["boxes"])
 
         # 应用标准化变换
