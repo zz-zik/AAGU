@@ -13,6 +13,8 @@ import os
 import cv2
 import numpy as np
 import torch
+import torchvision
+from torch import Tensor
 from tqdm import tqdm
 
 from dataloader import mscoco_category2label, DeNormalize
@@ -63,15 +65,21 @@ def _test(
                 for idx, (target, result) in enumerate(zip(targets, results)):
                     # 过滤掉低于阈值的预测结果
                     keep = result["scores"] > threshold
+                    pred_boxes = result["boxes"][keep]
+                    pred_labels = result["labels"][keep]
+                    pred_scores = result["scores"][keep]
+
+                    # 应用 NMS 去除重复框
+                    nms_keep = apply_nms(pred_boxes, pred_scores, pred_labels, iou_threshold=0.7)
+                    # nms_keep = nms_keep[:keep_topk]  # 可选：限制最大保留数量
+
                     filtered_result = {
-                        "boxes": result["boxes"][keep],
-                        "labels": result["labels"][keep],
-                        "scores": result["scores"][keep],
+                        "boxes": pred_boxes[nms_keep],
+                        "labels": pred_labels[nms_keep],
+                        "scores": pred_scores[nms_keep],
                     }
 
                     image_name = target['image_name']
-                    # 根据字典映射修改预测标签
-                    # labels =
                     preds.append({
                         "boxes": filtered_result["boxes"],
                         "labels": filtered_result['labels'],
@@ -103,6 +111,29 @@ def _test(
     # 保存结果到CSV文件
     save_to_csv(preds, output_dir)
     return preds
+
+
+def apply_nms(boxes: Tensor, scores: Tensor, labels: Tensor, iou_threshold: float = 0.7):
+    """
+    对预测的边界框应用非极大值抑制(NMS)，去除重叠的冗余框。
+
+    Args:
+        boxes (Tensor): 边界框张量，形状为 [N, 4]
+        scores (Tensor): 每个框的置信度分数，形状为 [N]
+        labels (Tensor): 每个框的类别标签，形状为 [N]
+        iou_threshold (float): IoU 阈值，用于判断两个框是否重叠过多
+
+    Returns:
+        Tensor: 经过 NMS 后保留的边界框索引
+    """
+    # 按类别分别执行 batched_nms
+    keep_indices = torchvision.ops.batched_nms(
+        boxes=boxes,
+        scores=scores,
+        idxs=labels,
+        iou_threshold=iou_threshold
+    )
+    return keep_indices
 
 
 def tensor_to_image(img_tensor):
