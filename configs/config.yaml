@@ -1,8 +1,8 @@
 name: 'train'
-device: 'cuda:2'
+device: 'cuda:1'
 seed: 42
 output_dir: ./work_dirs
-num_workers: 8
+num_workers: 4
 resume: null  # 如果存在，则恢复训练
 
 data:
@@ -17,19 +17,66 @@ data:
     color_jitter: 0.0           # 颜色扰动强度 (brightness, contrast, saturation)
     gamma_correction: 0.0       # Gamma 校正概率
     random_erase: 0.0           # 随机擦除概率
-    blur_sigma: 0.0             # 高斯模糊（暂时关闭）
+    blur_sigma: 0.3             # 高斯模糊（暂时关闭）
 
 model:
   num_classes: 1
-  backbone_name: "hgnetv2"  # ['swint', 'resnet50', 'hgnetv2']
-  pretrained: True  # 是否使用BackBone预训练权重
   img_size: [512, 640]
-  out_dims: [512, 1024, 2048]
+  backbone_name: "hgnetv2"  # ['swint', 'resnet50', 'hgnetv2']
+  backbone:
+    name: 'B5'
+    use_lab: False
+    return_idx: [1, 2, 3]
+    pretrained: True  # 是否使用BackBone预训练权重
+
   aagf:
     roi_sizes: [14, 7, 3]
     use_confidence: True # 置信度融合
     use_attention: False  # 相似度融合
     use_similarity: False  # 注意力融合
+  encoder:
+    in_channels: [512, 1024, 2048]
+    feat_strides: [8, 16, 32]
+
+    hidden_dim: 384
+    use_encoder_idx: [2]
+    num_encoder_layers: 1
+    nhead: 8
+    dim_feedforward: 2048
+    dropout: 0.
+    enc_act: 'gelu'
+
+    # cross
+    expansion: 1.0
+    depth_mult: 1
+    act: 'silu'
+
+  decoder:
+    feat_channels: [384, 384, 384]
+    feat_strides: [8, 16, 32]
+    hidden_dim: 256
+    num_levels: 3
+
+    num_layers: 6
+    eval_idx: -1
+    num_queries: 300
+
+    num_denoising: 100
+    label_noise_ratio: 0.5
+    box_noise_scale: 1.0
+
+    # NEW
+    reg_max: 32
+    reg_scale: 8
+
+    # Auxiliary decoder layers dimension scaling
+    # "eg. If num_layers: 6 eval_idx: -4,
+    # then layer 3, 4, 5 are auxiliary decoder layers."
+    layer_scale: 1  # 2
+
+    num_points: [3, 6, 3] # [4, 4, 4] [3, 6, 3]
+    cross_attn_method: default # default, discrete
+    query_select_method: default # default, agnostic
 
 criterion:
   weight_dict:
@@ -66,14 +113,15 @@ training:
   lr_drop: 50
   gamma: 0.1
   lr_backbone: 0.00001
-  batch_size: 8
+  batch_size: 16
   start_eval: 1
   eval_freq: 1
   log_interval: 0
 
 test:
   img_dirs: './data'
-  batch_size: 1
+  batch_size: 8
+  threshold: 0.5
   device: 'cuda:1'
   output_dir: "./work_dirs"
   name: "test"

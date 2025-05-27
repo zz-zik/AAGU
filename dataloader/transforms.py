@@ -126,13 +126,20 @@ class RandomFlip(nn.Module):
             if torch.rand(1) < 0.5:
                 rgb = F.hflip(rgb)
                 tir = F.hflip(tir)
-                # 更新目标框
-                target["boxes"][:, [0, 2]] = 1.0 - target["boxes"][:, [2, 0]]
+                # 更新目标框（仅当 boxes 存在时）
+                if "boxes" in target and len(target["boxes"]) > 0:
+                    boxes = target["boxes"]
+                    boxes[:, [0, 2]] = 1.0 - boxes[:, [2, 0]]
+                    target["boxes"] = boxes
             else:
                 rgb = F.vflip(rgb)
                 tir = F.vflip(tir)
-                # 更新目标框
-                target["boxes"][:, [1, 3]] = 1.0 - target["boxes"][:, [3, 1]]
+                # 更新目标框（仅当 boxes 存在时）
+                if "boxes" in target and len(target["boxes"]) > 0:
+                    boxes = target["boxes"]
+                    boxes[:, [1, 3]] = 1.0 - boxes[:, [3, 1]]
+                    target["boxes"] = boxes
+
         return rgb, tir, target
 
 
@@ -145,7 +152,7 @@ class RandomRotation(nn.Module):
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
-        torch.Tensor, torch.Tensor, Dict[str, Any]]:
+            torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             _, h, w = rgb.shape
             angle = float(torch.empty(1).uniform_(-self.degrees, self.degrees))
@@ -156,9 +163,9 @@ class RandomRotation(nn.Module):
                 angle=angle,
                 translate=(0., 0.),
                 scale=1.0,
-                shear=(0.0,)
+                shear=(0.0, 0.0)
             )
-            matrix = torch.tensor(matrix, dtype=torch.float32, device=rgb.device).view(3, 3)
+            matrix = torch.tensor(matrix, dtype=torch.float32, device=rgb.device).view(2, 3)
 
             # 应用变换
             rgb = F.rotate(rgb, angle)
@@ -168,11 +175,7 @@ class RandomRotation(nn.Module):
             if "boxes" in target and len(target["boxes"]) > 0:
                 target["boxes"] = apply_affine_to_boxes(target["boxes"], matrix, w, h)
 
-            # 验证仿射变换矩阵
-            print("Affine matrix after rotation:", matrix)
-
         return rgb, tir, target
-
 
 
 class RandomResize(nn.Module):
@@ -184,29 +187,28 @@ class RandomResize(nn.Module):
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
-        torch.Tensor, torch.Tensor, Dict[str, Any]]:
+            torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             scale = float(torch.empty(1).uniform_(self.scale_range[0], self.scale_range[1]))
             new_size = (int(rgb.size(1) * scale), int(rgb.size(2) * scale))
             rgb = F.resize(rgb, new_size)
             tir = F.resize(tir, new_size)
 
-            # 获取新旧尺寸
-            img_h, img_w = rgb.shape[1], rgb.shape[2]
-            img_h_new, img_w_new = new_size
-
             # 更新目标框
-            boxes = target["boxes"].clone()
-            boxes *= torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)  # 归一化 -> 绝对坐标
-            boxes *= scale  # 缩放
-            boxes /= torch.tensor([img_w_new, img_h_new, img_w_new, img_h_new], device=boxes.device)  # 再次归一化
-            target["boxes"] = boxes
+            if "boxes" in target and len(target["boxes"]) > 0:
+                img_h, img_w = rgb.shape[1], rgb.shape[2]
+                img_h_new, img_w_new = new_size
+
+                boxes = target["boxes"].clone()
+                boxes *= torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)  # 归一化 -> 绝对坐标
+                boxes *= scale  # 缩放
+                boxes /= torch.tensor([img_w_new, img_h_new, img_w_new, img_h_new], device=boxes.device)  # 再次归一化
+                target["boxes"] = boxes
 
         # 可选：验证尺寸一致性
         assert rgb.shape[1:] == tir.shape[1:], "RGB 和 TIR 图像尺寸不一致"
 
         return rgb, tir, target
-
 
 
 class ColorJitter(nn.Module):
@@ -254,7 +256,7 @@ class AffineTransform(nn.Module):
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
-        torch.Tensor, torch.Tensor, Dict[str, Any]]:
+            torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             _, h, w = rgb.shape
             angle = float(torch.empty(1).uniform_(-self.degrees, self.degrees))
@@ -271,7 +273,7 @@ class AffineTransform(nn.Module):
                 scale=scale,
                 shear=shear
             )
-            matrix = torch.tensor(matrix, dtype=torch.float32, device=rgb.device).view(3, 3)
+            matrix = torch.tensor(matrix, dtype=torch.float32, device=rgb.device).view(2, 3)
 
             # 应用变换
             rgb = F.affine(rgb, angle, (translate_x, translate_y), scale, shear)
@@ -284,19 +286,23 @@ class AffineTransform(nn.Module):
         return rgb, tir, target
 
 
+
 def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int, img_h: int) -> torch.Tensor:
     """
     Apply affine transformation to boxes in normalized [x_min, y_min, x_max, y_max] format.
 
     Args:
         boxes (Tensor): shape (N, 4), normalized coordinates
-        matrix (Tensor): affine matrix of shape (3, 3)
+        matrix (Tensor): affine matrix of shape (2, 3)
         img_w (int): image width
         img_h (int): image height
 
     Returns:
         Tensor: transformed boxes in normalized format
     """
+    if len(boxes) == 0:
+        return boxes  # 直接返回空 boxes
+
     # Convert boxes from normalized [0, 1] to absolute pixel values
     boxes_abs = boxes * torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)
 
@@ -331,6 +337,7 @@ def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int,
     new_boxes_abs = new_boxes_abs.clamp(min=0)
     new_boxes = new_boxes_abs / torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)
     return new_boxes.clamp(max=1.0)
+
 
 class RandomErasing(nn.Module):
     """随机擦除"""
@@ -389,6 +396,7 @@ def xyxy_to_cxcywh(boxes: torch.Tensor) -> torch.Tensor:
     w = x2 - x1
     h = y2 - y1
     return torch.stack([cx, cy, w, h], dim=-1)
+
 
 if __name__ == "__main__":
     # 创建示例输入数据

@@ -35,7 +35,7 @@ def main():
         num_classes=1,  # 类别数
         use_focal_loss=True,  # 是否使用Focal Loss
         num_top_queries=300,
-        # remap_mscoco_category=True
+        remap_mscoco_category=True
     )
 
     # Build test dataset
@@ -45,7 +45,7 @@ def main():
 
     # Run evaluation
     logger.info("Start testing...")
-    preds = _test(model, postprocessor, test_loader, device, output_dir=output_dir, show=cfg.test.show)
+    preds = _test(model, postprocessor, test_loader, device, cfg.test.threshold, output_dir=output_dir, show=cfg.test.show)
 
 
 if __name__ == '__main__':

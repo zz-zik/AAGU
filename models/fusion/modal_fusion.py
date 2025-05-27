@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 @Project : AAGU
-@FileName: backbones.py
+@FileName: fusion.py
 @Time    : 2025/5/16 下午8:06
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
@@ -9,13 +9,13 @@
 @Usage   :
 """
 from torch import nn
-from models.backbones import CenterHead, AAGF, TFAM
-from models.backbones.backbone import build_backbone
+from models.fusion import TFAM
+from models import build_backbone
 
-__all__ = ['BackBones']
+__all__ = ['Fusion']
 
 
-# class BackBones(nn.Module):
+# class Fusion(nn.Module):
 #
 #     def __init__(self, cfg):
 #         super().__init__()
@@ -59,15 +59,20 @@ __all__ = ['BackBones']
 #
 #         return fused
 
-class BackBones(nn.Module):
+class Fusion(nn.Module):
 
-    def __init__(self, cfg, backbone_name='hgnetv2', out_dims=[512, 1024, 2048], roi_sizes=[14, 7, 3],
-                 use_confidence=True, use_attention=False, use_similarity=False):
+    def __init__(self, backbone_name: str='hgnetv2', name="B5", use_lab: bool=False, img_size: tuple = (512, 640),
+                 return_idx:  list=[1, 2, 3], pretrained: bool=True):
         super().__init__()
-        self.backbone_name = backbone_name
-        self.out_dims = out_dims
-        self.roi_sizes = roi_sizes
-        self.backbone = build_backbone(cfg)
+        self.return_idx = return_idx
+        self.backbone = build_backbone(
+            backbone_name=backbone_name,
+            name=name,
+            use_lab=use_lab,
+            img_size=img_size,
+            return_idx=return_idx,
+            pretrained=pretrained
+        )
 
         # # 锚点检测头
         # self.ancher = nn.ModuleList([CenterHead(dim, num_anchors=10) for dim in self.out_dims])
@@ -86,10 +91,6 @@ class BackBones(nn.Module):
         feats_rgb = self.backbone(rgb)
         feats_tir = self.backbone(tir)
 
-        # 舍弃第一层
-        feats_rgb = feats_rgb[1:]  # 舍弃第一层特征
-        feats_tir = feats_tir[1:]  # 舍弃第一层特征
-
         # # 锚点检测头
         # ancher_rgb = [self.ancher[i](feat) for i, feat in enumerate(feats_rgb)]
         # ancher_tir = [self.ancher[i](feat) for i, feat in enumerate(feats_tir)]
@@ -98,7 +99,7 @@ class BackBones(nn.Module):
         # fused = [self.aagf[i](f_rgb, f_tir, a_rgb, a_tir) for i, f_rgb, f_tir, a_rgb, a_tir in
         #          zip(range(len(self.out_dims)), feats_rgb, feats_tir, ancher_rgb, ancher_tir)]
         fused = [self.fusion[i](f_rgb, f_tir) for i, f_rgb, f_tir in
-                 zip(range(len(self.out_dims)), feats_rgb, feats_tir)]
+                 zip(range(len(self.return_idx)), feats_rgb, feats_tir)]
 
         return fused
 
@@ -112,7 +113,14 @@ if __name__ == '__main__':
     # 示例输入：2张3通道512x512的图像
     rgb = torch.randn(2, 3, 512, 640)
     tir = torch.randn(2, 3, 512, 640)
-    model = BackBones(cfg)
+    model = Fusion(
+        backbone_name=cfg.model.backbone_name,
+        name=cfg.model.backbone.name,
+        use_lab=cfg.model.backbone.use_lab,
+        img_size=cfg.model.img_size,
+        return_idx=cfg.model.backbone.return_idx,
+        pretrained=cfg.model.backbone.pretrained
+    )
     feats = model(rgb, tir)
     for feat in feats:
         print(feat.shape)
@@ -120,4 +128,4 @@ if __name__ == '__main__':
     from thop import profile
 
     flops, params = profile(model, inputs=(rgb, tir))
-    print(f"backbones FLOPs: {flops / 1e9:.2f} G, Params: {params / 1e6:.2f} M")
+    print(f"fusion FLOPs: {flops / 1e9:.2f} G, Params: {params / 1e6:.2f} M")

@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.backbones import TFAM
+from models.fusion import TFAM
 
 
 class AnchorDetector(nn.Module):

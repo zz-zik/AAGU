@@ -115,7 +115,6 @@ class TrainingEngine:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
         # Store best metrics
-        self.best_ap = -1
         self.best_iou_50 = -1
         self.best_iou_50_95 = -1
 
@@ -181,15 +180,14 @@ class TrainingEngine:
 
                 # Log evaluation results
                 self.logger.info(
-                    "[ep %d][%.3fs][%.5ffps] loss: %.4f, AP: %.4f, IOU@50: %.4f, IOU@50-95: %.4f ---- @best AP: %.4f, @best IOU@50: %.4f, @best IOU@50-95: %.4f" % \
+                    "[ep %d][%.3fs][%.5ffps] loss: %.4f, IOU@50: %.4f, IOU@50-95: %.4f ---- @best IOU@50: %.4f, @best IOU@50-95: %.4f" % \
                     (epoch, t_eval_end - t_eval_start, len(self.val_dataloader.dataset) / (t_eval_end - t_eval_start),
-                     metrics['loss'], metrics['ap'], metrics['iou_50'], metrics['iou_50_95'],
-                     self.best_ap, self.best_iou_50, self.best_iou_50_95)
+                     metrics['loss'], metrics['iou_50'], metrics['iou_50_95'],
+                     self.best_iou_50, self.best_iou_50_95)
                 )
 
                 # Log to tensorboard
                 self.writer.add_scalar('metric/val_loss', metrics['loss'], epoch)
-                self.writer.add_scalar('metric/AP', metrics['ap'], epoch)
                 self.writer.add_scalar('metric/IOU_50', metrics['iou_50'], epoch)
                 self.writer.add_scalar('metric/IOU_50_95', metrics['iou_50_95'], epoch)
 
@@ -216,8 +214,8 @@ class TrainingEngine:
         self.logger.info('Summary of results')
         self.logger.info(self.env_info)
         self.logger.info('Training time {}'.format(total_time_str))
-        self.logger.info("Best AP: %.4f, Best IOU@50: %.4f, Best IOU@50-95: %.4f" % (
-            self.best_ap, self.best_iou_50, self.best_iou_50_95))
+        self.logger.info("Best IOU@50: %.4f, Best IOU@50-95: %.4f" % (
+            self.best_iou_50, self.best_iou_50_95))
         self.logger.info('Results saved to {}'.format(self.cfg.output_dir))
 
 

@@ -324,7 +324,7 @@ class HybridEncoder(nn.Module):
         expansion=1.0,
         depth_mult=1.0,
         act="silu",
-        eval_spatial_size=[640, 512],
+        eval_spatial_size=None,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -351,7 +351,7 @@ class HybridEncoder(nn.Module):
 
             self.input_proj.append(proj)
 
-        # backbones transformer
+        # fusion transformer
         encoder_layer = TransformerEncoderLayer(
             hidden_dim,
             nhead=nhead,
@@ -440,7 +440,7 @@ class HybridEncoder(nn.Module):
         assert len(feats) == len(self.in_channels)
         proj_feats = [self.input_proj[i](feat) for i, feat in enumerate(feats)]
 
-        # backbones
+        # fusion
         if self.num_encoder_layers > 0:
             for i, enc_ind in enumerate(self.use_encoder_idx):
                 h, w = proj_feats[enc_ind].shape[2:]

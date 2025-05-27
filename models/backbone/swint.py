@@ -15,11 +15,12 @@ __all__ = ['SwinT']
 
 
 class SwinT(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, name: str = 'swin_base_patch4_window7_224', img_size: tuple = (512, 640),
+                 return_idx: list = [1, 2, 3], pretrained: bool = True):
         super().__init__()
         # 使用Swin Transformer作为视觉编码器
-        self.backbone = create_model(model_name='swin_base_patch4_window7_224', features_only=True, out_indices=[0, 1, 2, 3],
-                                     pretrained=cfg.model.pretrained, img_size=cfg.model.img_size)
+        self.backbone = create_model(model_name=name, features_only=True, out_indices=return_idx,
+                                     pretrained=pretrained, img_size=img_size)
         self.out_dims = [96, 192, 384, 768]
 
     def forward(self, x):
@@ -39,14 +40,13 @@ if __name__ == '__main__':
     import torch
     from utils import load_config
 
-    cfg = load_config('../../../configs/config.yaml')
     # 测试Swin Transformer
-    model_swin = SwinT(cfg)
+    model_swin = SwinT(name='swin_base_patch4_window7_224', img_size=(512, 640), return_idx=[1, 2, 3], pretrained=True)
     x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x640的图像
     feats_swin = model_swin(x)
     print("Swin Transformer Features:")
     for i, feat in enumerate(feats_swin):
-        print(f"Layer {i} feature shape: {feat.shape}")
+        print(f"Layer {i + 1} feature shape: {feat.shape}")
 
     # 计算FLOPs和Params
     from thop import profile

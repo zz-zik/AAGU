@@ -8,22 +8,58 @@ __all__ = [
     "DFINE",
 ]
 
-from models import BackBones
-from models.backbones.backbone import build_backbone
+from models import Fusion
 from models.dfine import HybridEncoder, DFINETransformer
 
 
 class DFINE(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.backbone = BackBones(cfg, cfg.model.backbone_name, cfg.model.out_dims, cfg.model.aagf.roi_sizes,
-                                  cfg.model.aagf.use_confidence, cfg.model.aagf.use_attention, cfg.model.aagf.use_similarity)
+        self.fusion = Fusion(
+            backbone_name=cfg.model.backbone_name,
+            name=cfg.model.backbone.name,
+            use_lab=cfg.model.backbone.use_lab,
+            img_size=cfg.model.img_size,
+            return_idx=cfg.model.backbone.return_idx,
+            pretrained=cfg.model.backbone.pretrained
+        )
         # self.backbone = build_backbone(cfg)
-        self.encoder = HybridEncoder(in_channels=cfg.model.out_dims, feat_strides=[8, 16, 32])
-        self.decoder = DFINETransformer(num_classes=cfg.model.num_classes, feat_channels=[256, 256, 256])
+        self.encoder = HybridEncoder(
+            in_channels=cfg.model.encoder.in_channels,
+            feat_strides=cfg.model.encoder.feat_strides,
+            hidden_dim=cfg.model.encoder.hidden_dim,
+            use_encoder_idx=cfg.model.encoder.use_encoder_idx,
+            num_encoder_layers=cfg.model.encoder.num_encoder_layers,
+            nhead=cfg.model.encoder.nhead,
+            dim_feedforward=cfg.model.encoder.dim_feedforward,
+            dropout=cfg.model.encoder.dropout,
+            enc_act=cfg.model.encoder.enc_act,
+            expansion=cfg.model.encoder.expansion,
+            depth_mult=cfg.model.encoder.depth_mult,
+            act=cfg.model.encoder.act,
+        )
+        self.decoder = DFINETransformer(
+            num_classes=cfg.model.num_classes,
+            hidden_dim=cfg.model.decoder.hidden_dim,
+            num_queries=cfg.model.decoder.num_queries,
+            feat_channels=cfg.model.decoder.feat_channels,
+            feat_strides=cfg.model.decoder.feat_strides,
+            num_levels=cfg.model.decoder.num_levels,
+            num_points=cfg.model.decoder.num_points,
+            num_layers=cfg.model.decoder.num_layers,
+            num_denoising=cfg.model.decoder.num_denoising,
+            label_noise_ratio=cfg.model.decoder.label_noise_ratio,
+            box_noise_scale=cfg.model.decoder.box_noise_scale,
+            eval_idx=cfg.model.decoder.eval_idx,
+            cross_attn_method=cfg.model.decoder.cross_attn_method,
+            query_select_method=cfg.model.decoder.query_select_method,
+            reg_max=cfg.model.decoder.reg_max,
+            reg_scale=cfg.model.decoder.reg_scale,
+            layer_scale=cfg.model.decoder.layer_scale,
+        )
 
     def forward(self, rgb, tir, targets=None):
-        x = self.backbone(rgb, tir)
+        x = self.fusion(rgb, tir)
         x = self.encoder(x)
         x = self.decoder(x, targets)
 
@@ -62,5 +98,8 @@ if __name__ == "__main__":
 
     model = DFINE(cfg)
     output = model(rgb, tir, targets)
-    print(output)
+    # print(output)
 
+    from thop import profile
+    flops, params = profile(model, inputs=(rgb, tir))
+    print(f"fusion FLOPs: {flops / 1e9:.2f} G, Params: {params / 1e6:.2f} M")

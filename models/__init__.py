@@ -1,4 +1,5 @@
-from .backbones import BackBones
+from .backbone import build_backbone
+from .fusion import Fusion
 from .dfine import DFINE, HungarianMatcher, DFINECriterion
 
 

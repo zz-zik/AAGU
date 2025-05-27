@@ -240,7 +240,10 @@ class Crowds(Dataset):
         def numeric_key(filename):
             numbers = list(map(int, re.findall(r'\d+', filename)))
             return (tuple(numbers), filename) if numbers else ((), filename)
+
         return sorted(filenames, key=numeric_key)
+
+
 def has_coco_targets(coco_label_path, img_id):
     """
     检查 COCO 格式的标签文件中是否包含指定图像的目标
@@ -274,12 +277,11 @@ def sort_filenames_numerically(filenames):
 
 
 mscoco_category2name = {
-    1: "people",
+    0: "people",
 }
 
 mscoco_category2label = {k: i for i, k in enumerate(mscoco_category2name.keys())}
 mscoco_label2category = {v: k for k, v in mscoco_category2label.items()}
-
 
 if __name__ == '__main__':
     from utils import load_config

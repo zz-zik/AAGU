@@ -15,10 +15,11 @@ __all__ = ['ResNet50']
 
 
 class ResNet50(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, return_idx: list = [1, 2, 3], pretrained: bool=True):
         super().__init__()
+        self.return_idx = return_idx
         # 使用ResNet50作为视觉编码器
-        if cfg.model.pretrained:
+        if pretrained:
             weights = ResNet50_Weights.DEFAULT
         else:
             weights = None
@@ -42,27 +43,28 @@ class ResNet50(nn.Module):
         feats = []
         x = self.layer0(x)
         x = self.layer1(x)
-        feats.append(x)  # C=256, 1/4分辨率
+        if 0 in self.return_idx:
+            feats.append(x)  # Layer1 output - 1/4 resolution
         x = self.layer2(x)
-        feats.append(x)  # C=512, 1/8分辨率
+        if 1 in self.return_idx:
+            feats.append(x)  # Layer2 output - 1/8 resolution
         x = self.layer3(x)
-        feats.append(x)  # C=1024, 1/16分辨率
+        if 2 in self.return_idx:
+            feats.append(x)  # Layer3 output - 1/16 resolution
         x = self.layer4(x)
-        feats.append(x)  # C=2048, 1/32分辨率
+        if 3 in self.return_idx:
+            feats.append(x)  # Layer4 output - 1/32 resolution
         return feats
 
 
 # 测试
 if __name__ == '__main__':
     import torch
-    from utils import load_config
-
-    cfg = load_config('../../../configs/config.yaml')
 
     x = torch.randn(2, 3, 512, 640)  # 示例输入：2张3通道512x512的图像
 
     # 测试ResNet50
-    model_resnet = ResNet50(cfg)
+    model_resnet = ResNet50(return_idx=[1, 2, 3], pretrained=True)
     feats_resnet = model_resnet(x)
     print("\nResNet50 Features:")
     for i, feat in enumerate(feats_resnet):
