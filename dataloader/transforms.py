@@ -192,7 +192,7 @@ class RandomRotation(nn.Module):
 
 
 class RandomResize(nn.Module):
-    """随机缩放"""
+    """随机缩放并保持原尺寸"""
 
     def __init__(self, scale_range: Tuple[float, float] = (0.8, 1.2), prob: float = 0.5):
         super().__init__()
@@ -203,25 +203,46 @@ class RandomResize(nn.Module):
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             scale = float(torch.empty(1).uniform_(self.scale_range[0], self.scale_range[1]))
-            new_size = (int(rgb.size(1) * scale), int(rgb.size(2) * scale))
             img_h, img_w = rgb.shape[1], rgb.shape[2]
+            new_size = (int(img_h * scale), int(img_w * scale))
+
+            # 缩放图像
             rgb = F.resize(rgb, new_size)
             tir = F.resize(tir, new_size)
 
             # 更新目标框
             if "boxes" in target and len(target["boxes"]) > 0:
-                img_h_new, img_w_new = new_size
-
                 boxes = target["boxes"].clone()
                 boxes *= torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)  # 归一化 -> 绝对坐标
                 boxes *= scale  # 缩放
-                boxes /= torch.tensor([img_w_new, img_h_new, img_w_new, img_h_new], device=boxes.device)  # 再次归一化
+
+                # 裁剪或填充图像和边界框
+                if scale > 1.0:  # 放大：裁剪到原始尺寸
+                    top = (rgb.shape[1] - img_h) // 2
+                    left = (rgb.shape[2] - img_w) // 2
+                    rgb = rgb[:, top:top + img_h, left:left + img_w]
+                    tir = tir[:, top:top + img_h, left:left + img_w]
+                    boxes -= torch.tensor([left, top, left, top], device=boxes.device)  # 调整边界框坐标
+                    boxes /= torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)  # 再次归一化
+                else:  # 缩小：填充到原始尺寸
+                    pad_top = (img_h - rgb.shape[1]) // 2
+                    pad_left = (img_w - rgb.shape[2]) // 2
+                    pad_bottom = img_h - rgb.shape[1] - pad_top
+                    pad_right = img_w - rgb.shape[2] - pad_left
+                    rgb = F.pad(rgb, (pad_left, pad_top, pad_right, pad_bottom))
+                    tir = F.pad(tir, (pad_left, pad_top, pad_right, pad_bottom))
+                    boxes += torch.tensor([pad_left, pad_top, pad_left, pad_top], device=boxes.device)  # 调整边界框坐标
+                    boxes /= torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)  # 再次归一化
+
                 target["boxes"] = boxes
 
-        # 可选：验证尺寸一致性
-        assert rgb.shape[1:] == tir.shape[1:], "RGB 和 TIR 图像尺寸不一致"
+            # 确保最终尺寸一致
+            rgb = F.resize(rgb, (img_h, img_w))
+            tir = F.resize(tir, (img_h, img_w))
 
+        assert rgb.shape[1:] == tir.shape[1:], "RGB 和 TIR 图像尺寸不一致"
         return rgb, tir, target
+
 
 
 class ColorJitter(nn.Module):
@@ -422,13 +443,14 @@ if __name__ == "__main__":
 
     # 定义数据增强操作的参数
     transform_params = {
+        "prob": 0.6
         "random_flip": 0.5,
         "random_rotation": 10.0,
-        "random_resize": 0.2,
-        "color_jitter": 0.2,
-        "gamma_correction": 0.5,
-        "random_erase": 0.1,
-        "blur_sigma": 0.5
+        "random_resize": [0.6, 1.4],
+        "color_jitter": [0.2, 0.2, 0.2, 0.2],
+        "gamma_correction": [0.8, 1.2],
+        "random_erase": 0.0,
+        "blur_sigma": [5.0, 0.1, 2.0],
     }
 
     # 创建 Transforms 实例

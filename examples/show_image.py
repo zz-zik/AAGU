@@ -92,11 +92,13 @@ if __name__ == '__main__':
     denorm_rgb = DeNormalize(mean=[0.341, 0.355, 0.258], std=[0.131, 0.135, 0.118])
     denorm_tir = DeNormalize(mean=[0.615, 0.116, 0.374], std=[0.236, 0.156, 0.188])
 
-    # rgb_img = tensor_to_image(denorm_rgb(img_rgb.clone()))
-    # tir_img = tensor_to_image(denorm_tir(img_tir.clone()))
+    rgb_img = tensor_to_image(denorm_rgb(img_rgb.clone()))
+    tir_img = tensor_to_image(denorm_tir(img_tir.clone()))
 
-    rgb_img = tensor_to_image(img_rgb.clone())
-    tir_img = tensor_to_image(img_tir.clone())
+    # rgb_img = tensor_to_image(img_rgb.clone())
+    # tir_img = tensor_to_image(img_tir.clone())
+
+    print(rgb_img.shape)
 
     # 绘制边界框
     boxes = target['boxes']
