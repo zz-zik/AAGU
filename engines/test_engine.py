@@ -79,7 +79,7 @@ def _test(
                         "scores": pred_scores[nms_keep],
                     }
 
-                    image_name = target['image_name']
+                    image_name = os.path.splitext(target['image_name'])[0]
                     preds.append({
                         "boxes": filtered_result["boxes"],
                         "labels": filtered_result['labels'],
@@ -216,13 +216,13 @@ def save_to_csv(preds, output_dir):
             scores = pred['scores'].cpu().numpy()
 
             # 去掉文件后缀
-            image_id = os.path.splitext(image_name)[0]
+            # image_id = os.path.splitext(image_name)[0]
 
             if len(boxes) == 0:
                 # 没有检测结果的情况
                 writer.writerow([
                     idx,
-                    image_id,
+                    image_name,
                     '0',
                     '[0, 0, 0, 0]',
                     '0'
@@ -246,7 +246,7 @@ def save_to_csv(preds, output_dir):
             # 写入一行
             writer.writerow([
                 idx,
-                image_id,
+                image_name,
                 category_str,
                 box_str,
                 score_str
