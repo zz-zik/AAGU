@@ -103,20 +103,19 @@ class Transforms(nn.Module):
             rgb = torch.from_numpy(rgb).permute(2, 0, 1).float()
             tir = torch.from_numpy(tir).permute(2, 0, 1).float()
 
-        # 如果是 cxcywh 格式，先转换成 xyxy 以便统一处理
-        original_boxes = target.get("boxes", torch.empty((0, 4), device=rgb.device))
-        if self.box_fmt == 'cxcywh' and len(original_boxes) > 0:
-            boxes_xyxy = cxcywh_to_xyxy(original_boxes)
-            target["boxes"] = boxes_xyxy
-
         # 应用数据增强操作
         if self.train:
+            # 如果是 cxcywh 格式，先转换成 xyxy 以便统一处理
+            original_boxes = target.get("boxes", torch.empty((0, 4), device=rgb.device))
+            if self.box_fmt == 'cxcywh' and len(original_boxes) > 0:
+                boxes_xyxy = cxcywh_to_xyxy(original_boxes)
+                target["boxes"] = boxes_xyxy
             for transform in self.transforms:
                 rgb, tir, target = transform(rgb, tir, target)
 
-        # 恢复原始的 box_fmt 格式（如 cxcywh）
-        if self.box_fmt == 'cxcywh' and len(target.get("boxes", [])) > 0:
-            target["boxes"] = xyxy_to_cxcywh(target["boxes"])
+            # 恢复原始的 box_fmt 格式（如 cxcywh）
+            if self.box_fmt == 'cxcywh' and len(target.get("boxes", [])) > 0:
+                target["boxes"] = xyxy_to_cxcywh(target["boxes"])
 
         # 应用标准化变换
         rgb = self.rgb_transform(rgb)

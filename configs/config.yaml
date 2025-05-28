@@ -22,19 +22,19 @@ data:
 
 model:
   num_classes: 1
-  img_size: [512, 640]
+  img_size: [512, 640]  # 输入图片尺寸，[h, w]
   backbone_name: "hgnetv2"  # ['swint', 'resnet50', 'hgnetv2']
   backbone:
     name: 'B5'
     use_lab: False
     return_idx: [1, 2, 3]
     pretrained: True  # 是否使用BackBone预训练权重
-
   aagf:
     roi_sizes: [14, 7, 3]
     use_confidence: True # 置信度融合
     use_attention: False  # 相似度融合
     use_similarity: False  # 注意力融合
+
   encoder:
     in_channels: [512, 1024, 2048]
     feat_strides: [8, 16, 32]

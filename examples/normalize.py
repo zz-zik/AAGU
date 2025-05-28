@@ -21,6 +21,7 @@ from tqdm import tqdm
 from PIL import Image
 import numpy as np
 
+
 def calculate_mean_std(image_path, image_type="RGB"):
     # 使用 PIL 读取图像
     image = Image.open(image_path).convert("RGB")  # 确保图像为 RGB 格式
@@ -88,5 +89,3 @@ if __name__ == "__main__":
     overall_mean, overall_std = batch_calculate_mean_std(tir_folder, tir_extension, tir_type)
     print(f"{tir_type} 所有图像的平均均值（每个通道）： {overall_mean}")
     print(f"{tir_type} 所有图像的平均标准差（每个通道）： {overall_std}")
-
-
