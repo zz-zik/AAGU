@@ -443,7 +443,7 @@ if __name__ == "__main__":
 
     # 定义数据增强操作的参数
     transform_params = {
-        "prob": 0.6
+        "prob": 0.6,
         "random_flip": 0.5,
         "random_rotation": 10.0,
         "random_resize": [0.6, 1.4],
