@@ -56,32 +56,45 @@ class Transforms(nn.Module):
         self.transforms = []
 
         transform_params = {
-            'RandomFlip': kwargs.get('random_flip', 0.0),
+            'RandomFlip': kwargs.get('random_flip_prob', 0.0),
             'RandomRotation': kwargs.get('random_rotation', 0.0),
-            'RandomResize': kwargs.get('random_resize', 0.0),
-            'ColorJitter': kwargs.get('color_jitter', 0.0),
-            'GammaCorrection': kwargs.get('gamma_correction', 0.0),
-            'RandomErasing': kwargs.get('random_erase', 0.0),
-            'GaussianBlur': kwargs.get('blur_sigma', 0.0),
+            'RandomResize': kwargs.get('random_resize', (0.0, 0.0)),
+            'ColorJitter': kwargs.get('color_jitter', (0.0, 0.0, 0.0, 0.0)),
+            'GammaCorrection': kwargs.get('gamma_correction', (0.0, 0.0)),
+            'RandomErasing': kwargs.get('random_erase_prob', 0.0),
+            'GaussianBlur': kwargs.get('blur_sigma_prob', (0.0, 0.0, 0.0)),
         }
+        prob = kwargs.get('prob', 0.0)
 
         for name, param in transform_params.items():
-            if param > 0.0:
+            # 第一个值要大于0
+            if isinstance(param, (list, tuple)) and param[0] > 0.0:
+                if name == 'RandomResize':
+                    if isinstance(param, (list, tuple)) and len(param) == 2:
+                        scale_range = (float(param[0]), float(param[1]))
+                        self.transforms.append(RandomResize(scale_range=scale_range, prob=prob))
+                elif name == 'ColorJitter':
+                    if isinstance(param, (list, tuple)) and len(param) == 4:
+                        brightness, contrast, saturation, hue = param
+                        self.transforms.append(
+                            ColorJitter(brightness=brightness, contrast=contrast, saturation=saturation, hue=hue,
+                                        prob=prob))
+                elif name == 'GammaCorrection':
+                    if isinstance(param, (list, tuple)) and len(param) == 2:
+                        gamma_range = (float(param[0]), float(param[1]))
+                        self.transforms.append(GammaCorrection(gamma_range=gamma_range, prob=prob))
+                elif name == 'GaussianBlur':
+                    if isinstance(param, (list, tuple)) and len(param) == 3:
+                        kernel_size = int(param[0])
+                        sigma_range = (float(param[1]), float(param[2]))
+                        self.transforms.append(GaussianBlur(kernel_size=kernel_size, sigma=sigma_range, prob=prob))
+            elif isinstance(param, (int, float)) and param > 0.0:
                 if name == 'RandomFlip':
                     self.transforms.append(RandomFlip(prob=param))
                 elif name == 'RandomRotation':
-                    self.transforms.append(RandomRotation(degrees=10.0, prob=param))
-                elif name == 'RandomResize':
-                    self.transforms.append(RandomResize(scale_range=(0.8, 1.2), prob=param))
-                elif name == 'ColorJitter':
-                    self.transforms.append(
-                        ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, prob=param))
-                elif name == 'GammaCorrection':
-                    self.transforms.append(GammaCorrection(gamma_range=(0.8, 1.2), prob=param))
+                    self.transforms.append(RandomRotation(degrees=param, prob=prob))
                 elif name == 'RandomErasing':
                     self.transforms.append(RandomErasing(p=param, scale=(0.02, 0.33), ratio=(0.3, 3.3)))
-                elif name == 'GaussianBlur':
-                    self.transforms.append(GaussianBlur(kernel_size=5, sigma=(0.1, 2.0), prob=param))
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
@@ -152,7 +165,7 @@ class RandomRotation(nn.Module):
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
-            torch.Tensor, torch.Tensor, Dict[str, Any]]:
+        torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             _, h, w = rgb.shape
             angle = float(torch.empty(1).uniform_(-self.degrees, self.degrees))
@@ -187,16 +200,16 @@ class RandomResize(nn.Module):
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
-            torch.Tensor, torch.Tensor, Dict[str, Any]]:
+        torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             scale = float(torch.empty(1).uniform_(self.scale_range[0], self.scale_range[1]))
             new_size = (int(rgb.size(1) * scale), int(rgb.size(2) * scale))
+            img_h, img_w = rgb.shape[1], rgb.shape[2]
             rgb = F.resize(rgb, new_size)
             tir = F.resize(tir, new_size)
 
             # 更新目标框
             if "boxes" in target and len(target["boxes"]) > 0:
-                img_h, img_w = rgb.shape[1], rgb.shape[2]
                 img_h_new, img_w_new = new_size
 
                 boxes = target["boxes"].clone()
@@ -256,7 +269,7 @@ class AffineTransform(nn.Module):
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
-            torch.Tensor, torch.Tensor, Dict[str, Any]]:
+        torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             _, h, w = rgb.shape
             angle = float(torch.empty(1).uniform_(-self.degrees, self.degrees))
@@ -284,7 +297,6 @@ class AffineTransform(nn.Module):
                 target["boxes"] = apply_affine_to_boxes(target["boxes"], matrix, w, h)
 
         return rgb, tir, target
-
 
 
 def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int, img_h: int) -> torch.Tensor:
@@ -387,6 +399,7 @@ def cxcywh_to_xyxy(boxes: torch.Tensor) -> torch.Tensor:
     x2 = cx + w / 2
     y2 = cy + h / 2
     return torch.stack([x1, y1, x2, y2], dim=-1)
+
 
 def xyxy_to_cxcywh(boxes: torch.Tensor) -> torch.Tensor:
     """将 [x1, y1, x2, y2] 转换为 [cx, cy, w, h]"""
