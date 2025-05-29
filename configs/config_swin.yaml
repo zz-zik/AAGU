@@ -1,0 +1,132 @@
+name: 'train_swin'
+device: 'cuda:1'
+seed: 42
+output_dir: ./work_dirs
+num_workers: 4
+resume: null  # 如果存在，则恢复训练
+
+data:
+  data_root: './dataset/OdinMJ2'
+  data_format: 'default'  # [default, custom]
+  label_format: 'yolo'  # [yolo, coco]
+  labels: ["People"]  # 类别列表, 默认从0开始
+  transforms:
+    prob: 0.6                           # 数据增强比例
+    random_flip: 0.5                    # ✅水平/垂直翻转概率
+    random_rotation: 20.0               # 最大旋转角度 ±10°
+    random_resize: [0.6, 1.4]           # 缩放比例范围 ±20%
+    color_jitter: [0.2, 0.2, 0.2, 0.2]  # 颜色扰动强度 [brightness, contrast, saturation, hue]
+    gamma_correction: [0.8, 1.2]        # Gamma 校正概率, gamma范围
+    random_erase: 0.0                   # 随机擦除概率
+    blur_sigma: [5.0, 0.1, 2.0]         # 高斯模糊（暂时关闭）,[sigma, min, max]
+    jitter_drift: 0.03                  # 空间抖动偏移数据增强
+
+model:
+  num_classes: 1
+  img_size: [512, 640]  # 输入图片尺寸，[h, w]
+  backbone_name: "swint"  # ['swint', 'resnet50', 'hgnetv2']
+  backbone:
+    name: 'swin_base_patch4_window7_224'
+    use_lab: False
+    return_idx: [1, 2, 3]
+    out_channels: [512, 1024, 2048]
+    pretrained: True  # 是否使用BackBone预训练权重
+  aagf:
+    roi_sizes: [14, 7, 3]
+    use_confidence: True # 置信度融合
+    use_attention: False  # 相似度融合
+    use_similarity: False  # 注意力融合
+
+  encoder:
+    in_channels: [256, 512, 1024]
+    feat_strides: [8, 16, 32]
+
+    hidden_dim: 384
+    use_encoder_idx: [2]
+    num_encoder_layers: 1
+    nhead: 8
+    dim_feedforward: 2048
+    dropout: 0.
+    enc_act: 'gelu'
+
+    # cross
+    expansion: 1.0
+    depth_mult: 1
+    act: 'silu'
+
+  decoder:
+    feat_channels: [384, 384, 384]
+    feat_strides: [8, 16, 32]
+    hidden_dim: 256
+    num_levels: 3
+
+    num_layers: 6
+    eval_idx: -1
+    num_queries: 300
+
+    num_denoising: 100
+    label_noise_ratio: 0.5
+    box_noise_scale: 1.0
+
+    # NEW
+    reg_max: 32
+    reg_scale: 8
+
+    # Auxiliary decoder layers dimension scaling
+    # "eg. If num_layers: 6 eval_idx: -4,
+    # then layer 3, 4, 5 are auxiliary decoder layers."
+    layer_scale: 1  # 2
+
+    num_points: [3, 6, 3] # [4, 4, 4] [3, 6, 3]
+    cross_attn_method: default # default, discrete
+    query_select_method: default # default, agnostic
+
+criterion:
+  weight_dict:
+    loss_vfl:  1.0
+    loss_bbox: 5
+    loss_giou: 2
+    loss_fgl: 0.15
+    loss_ddf: 1.5
+  losses: ['vfl', 'boxes', 'focal']
+  alpha: 0.75
+  gamma: 2.0
+  reg_max: 32
+  matcher:
+    weight_dict:
+      cost_class: 2
+      cost_bbox: 5
+      cost_giou: 2
+    alpha: 0.25
+    gamma: 2.0
+
+logger:
+  log_name: 'Seg_log'
+  level: 'INFO'
+
+training:
+  start_epoch: 1
+  epochs: 100
+  optimizer: 'adamw' # [sgd, adam, adamw]
+  betas: [0.9, 0.999]
+  eps: 0.00000001
+  weight_decay: 0.0001
+  scheduler: 'step'  # [step, plateau, multistep, cosine, onecycle, lambda]
+  lr: 0.0001
+  lr_drop: 10
+  gamma: 0.1
+  lr_backbone: 0.00001
+  batch_size: 16
+  start_eval: 1
+  eval_freq: 1
+  log_interval: 0
+
+test:
+  img_dirs: './data'
+  batch_size: 8
+  threshold: 0.1
+  device: 'cuda:2'
+  output_dir: "./work_dirs"
+  name: "test"
+  weights_dir: "./work_dirs/train/checkpoints/best.pth"
+  show: True
