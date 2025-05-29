@@ -84,7 +84,8 @@ def tester(
                         "boxes": filtered_result["boxes"],
                         "labels": filtered_result['labels'],
                         "scores": filtered_result["scores"],
-                        "image_name": image_name
+                        "image_name": image_name,
+                        "image_size": (h, w)  # 添加图像尺寸字段
                     })
 
                     if show:
@@ -110,6 +111,10 @@ def tester(
                         )
     # 保存结果到CSV文件
     save_to_csv(preds, output_dir)
+
+    # 保存为yolo格式的标注
+    save_to_yolo_format(preds, output_dir)
+
     return preds
 
 
@@ -255,3 +260,36 @@ def save_to_csv(preds, output_dir):
     print(f"✅ 检测结果已保存至 {result_file}")
 
 
+def save_to_yolo_format(preds, output_dir):
+    """
+    将检测结果保存为 YOLO 格式（每个图像一个 .txt 文件）
+
+    Args:
+        preds: List of dicts with keys ['boxes', 'labels', 'scores', 'image_name', 'image_size']
+        output_dir: 输出根目录
+    """
+    yolo_output_dir = os.path.join(output_dir, "labels")
+    os.makedirs(yolo_output_dir, exist_ok=True)
+
+    for pred in preds:
+        image_name = pred["image_name"]
+        boxes = pred["boxes"].cpu().numpy()
+        labels = pred["labels"].cpu().numpy()
+        img_h, img_w = pred["image_size"]  # 直接从 preds 中取出图像尺寸
+
+        base_name = os.path.splitext(image_name)[0]
+        label_file = os.path.join(yolo_output_dir, f"{base_name}.txt")
+
+        with open(label_file, mode="w", encoding="utf-8") as f:
+            if len(boxes) == 0:
+                continue
+
+            for box, label in zip(boxes, labels):
+                x_center = (box[0] + box[2]) / 2 / img_w
+                y_center = (box[1] + box[3]) / 2 / img_h
+                width = (box[2] - box[0]) / img_w
+                height = (box[3] - box[1]) / img_h
+
+                f.write(f"{label} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+
+    print(f"✅ YOLO 格式标注文件已保存至 {yolo_output_dir}")
