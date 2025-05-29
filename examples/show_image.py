@@ -98,7 +98,6 @@ if __name__ == '__main__':
     # rgb_img = tensor_to_image(img_rgb.clone())
     # tir_img = tensor_to_image(img_tir.clone())
 
-
     # 绘制边界框
     boxes = target['boxes']
     labels = target['labels']

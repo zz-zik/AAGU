@@ -351,7 +351,7 @@ class HybridEncoder(nn.Module):
 
             self.input_proj.append(proj)
 
-        # fusion transformer
+        # neck transformer
         encoder_layer = TransformerEncoderLayer(
             hidden_dim,
             nhead=nhead,
@@ -440,7 +440,7 @@ class HybridEncoder(nn.Module):
         assert len(feats) == len(self.in_channels)
         proj_feats = [self.input_proj[i](feat) for i, feat in enumerate(feats)]
 
-        # fusion
+        # neck
         if self.num_encoder_layers > 0:
             for i, enc_ind in enumerate(self.use_encoder_idx):
                 h, w = proj_feats[enc_ind].shape[2:]
@@ -458,7 +458,7 @@ class HybridEncoder(nn.Module):
                     memory.permute(0, 2, 1).reshape(-1, self.hidden_dim, h, w).contiguous()
                 )
 
-        # broadcasting and fusion
+        # broadcasting and neck
         inner_outs = [proj_feats[-1]]
         for idx in range(len(self.in_channels) - 1, 0, -1):
             feat_heigh = inner_outs[0]

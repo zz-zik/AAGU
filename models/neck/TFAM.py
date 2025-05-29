@@ -61,7 +61,7 @@ class TFAM(nn.Module):
         spatial_stack = torch.stack([t1_spatial_attention, t2_spatial_attention], dim=0)  # 2,b,1,h,w
         spatial_stack = self.softmax(spatial_stack)  # 2,b,1,h,w
 
-        # fusion part, add 1 means residual add
+        # neck part, add 1 means residual add
         stack_attention = channel_stack + spatial_stack + 1  # 2,b,c,h,w
         fuse = stack_attention[0] * t1 + stack_attention[1] * t2  # b,c,h,w
 

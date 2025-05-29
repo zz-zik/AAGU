@@ -7,16 +7,18 @@
 @Email   : zhoufei.net@gmail.com
 @Desc    : 
 @Usage   :
+python train.py -c ./configs/config.yaml
+python train.py -c ./configs/config_swin.yaml
 """
 from engines import training
-from utils import load_config
+from utils import get_args_config
 import os
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 
 def main():
-    cfg = load_config('./configs/config.yaml')
+    cfg = get_args_config()
     training(cfg)
 
 

@@ -8,6 +8,7 @@
 @Desc    : 
 @Usage   :
 """
+import random
 
 import torchvision
 from typing import Any, Dict, Tuple
@@ -63,6 +64,7 @@ class Transforms(nn.Module):
             'GammaCorrection': kwargs.get('gamma_correction', (0.0, 0.0)),
             'RandomErasing': kwargs.get('random_erase_prob', 0.0),
             'GaussianBlur': kwargs.get('blur_sigma_prob', (0.0, 0.0, 0.0)),
+            'RandomJitter': kwargs.get('jitter_drift', 0.0),
         }
         prob = kwargs.get('prob', 0.0)
 
@@ -95,6 +97,8 @@ class Transforms(nn.Module):
                     self.transforms.append(RandomRotation(degrees=param, prob=prob))
                 elif name == 'RandomErasing':
                     self.transforms.append(RandomErasing(p=param, scale=(0.02, 0.33), ratio=(0.3, 3.3)))
+                elif name == 'RandomJitter':
+                    self.transforms.append(RandomJitter(max_drift=param, prob=prob))
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
@@ -411,6 +415,59 @@ class GaussianBlur(nn.Module):
         return rgb, tir, target
 
 
+class RandomJitter(nn.Module):
+    """空间抖动增强：通过裁剪 + 缩放实现RGB图像的偏移，不依赖填充"""
+
+    def __init__(self, max_drift: float = 0.01, prob: float = 0.5):
+        """
+        Args:
+            max_drift (float): 裁剪比例，表示裁剪区域比原图小多少（范围 [0, 1)）
+            prob (float): 触发该变换的概率
+        """
+        super().__init__()
+        if not 0 <= max_drift < 1:
+            raise ValueError(f"max_drift must be in range [0, 1), got {max_drift}")
+        self.max_drift = max_drift
+        self.prob = prob
+
+    def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
+        torch.Tensor, torch.Tensor, Dict[str, Any]]:
+        if torch.rand(1) < self.prob:
+            _, h, w = rgb.shape
+
+            # 计算裁剪区域大小
+            crop_h = int(h * (1 - self.max_drift))
+            crop_w = int(w * (1 - self.max_drift))
+
+            # 防止裁剪区域过小
+            crop_h = max(crop_h, 16)
+            crop_w = max(crop_w, 16)
+
+            # 随机选择裁剪起点
+            start_h = random.randint(0, h - crop_h)
+            start_w = random.randint(0, w - crop_w)
+
+            # 对裁剪区域进行轻微偏移（防止边缘越界）
+            offset_range = min(h - start_h - crop_h, w - start_w - crop_w, 10)
+            if offset_range > 0:
+                dx = random.randint(-offset_range, offset_range)
+                dy = random.randint(-offset_range, offset_range)
+                start_h += dy
+                start_w += dx
+
+                # 确保不越界
+                start_h = max(0, min(start_h, h - crop_h))
+                start_w = max(0, min(start_w, w - crop_w))
+
+            # 裁剪并缩放回原图尺寸
+            cropped_rgb = rgb[:, start_h:start_h + crop_h, start_w:start_w + crop_w]
+            resized_rgb = F.resize(cropped_rgb, size=(h, w))
+
+            return resized_rgb, tir, target
+
+        return rgb, tir, target
+
+
 def cxcywh_to_xyxy(boxes: torch.Tensor) -> torch.Tensor:
     """将 [cx, cy, w, h] 转换为 [x1, y1, x2, y2]"""
     cx, cy, w, h = boxes.unbind(dim=-1)
@@ -450,6 +507,7 @@ if __name__ == "__main__":
         "gamma_correction": [0.8, 1.2],
         "random_erase": 0.0,
         "blur_sigma": [5.0, 0.1, 2.0],
+        "jitter_drift": 0.01,
     }
 
     # 创建 Transforms 实例

@@ -1,24 +1,25 @@
 name: 'train'
-device: 'cuda:1'
+device: 'cuda:0'
 seed: 42
 output_dir: ./work_dirs
 num_workers: 4
 resume: null  # 如果存在，则恢复训练
 
 data:
-  data_root: './dataset/OdinMJ'
+  data_root: './dataset/OdinMJ2'
   data_format: 'default'  # [default, custom]
   label_format: 'yolo'  # [yolo, coco]
   labels: ["People"]  # 类别列表, 默认从0开始
   transforms:
     prob: 0.6                           # 数据增强比例
-    random_flip: 0.5                    # ✅水平/垂直翻转概率
-    random_rotation: 20.0               # 最大旋转角度 ±10°
-    random_resize: [0.6, 1.4]           # 缩放比例范围 ±20%
-    color_jitter: [0.2, 0.2, 0.2, 0.2]  # 颜色扰动强度 [brightness, contrast, saturation, hue]
-    gamma_correction: [0.8, 1.2]        # Gamma 校正概率, gamma范围
+    random_flip: 0.0                    # ✅水平/垂直翻转概率
+    random_rotation: 0.0               # 最大旋转角度 ±10°
+    random_resize: [0.0, 0.0]           # 缩放比例范围 ±20%
+    color_jitter: [0.0, 0.0, 0.0, 0.0]  # 颜色扰动强度 [brightness, contrast, saturation, hue]
+    gamma_correction: [0.0, 0.0]        # Gamma 校正概率, gamma范围
     random_erase: 0.0                   # 随机擦除概率
-    blur_sigma: [5.0, 0.1, 2.0]         # 高斯模糊（暂时关闭）,[sigma, min, max]
+    blur_sigma: [0.0, 0.0, 0.0]         # 高斯模糊（暂时关闭）,[sigma, min, max]
+    jitter_drift: 0.03                  # 空间抖动偏移数据增强
 
 model:
   num_classes: 1
@@ -28,6 +29,7 @@ model:
     name: 'B5'
     use_lab: False
     return_idx: [1, 2, 3]
+    out_channels: [512, 1024, 2048]
     pretrained: True  # 是否使用BackBone预训练权重
   aagf:
     roi_sizes: [14, 7, 3]
@@ -123,8 +125,8 @@ test:
   img_dirs: './data'
   batch_size: 8
   threshold: 0.1
-  device: 'cuda:1'
+  device: 'cuda:2'
   output_dir: "./work_dirs"
   name: "test"
-  weights_dir: "./work_dirs/train_0/checkpoints/best.pth"
+  weights_dir: "./work_dirs/train_base/checkpoints/best.pth"
   show: True

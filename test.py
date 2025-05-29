@@ -6,11 +6,11 @@
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
 @Desc    : 
-@Usage   : 
+@Usage   : python test.py -c ./configs/config.yaml
 """
 from torch.utils.data import DataLoader
 from dataloader import Crowds, Transforms
-from engines import _test, load_model
+from engines import tester, load_model
 import pprint
 import time
 
@@ -19,8 +19,7 @@ from utils import get_args_config, get_output_dir, setup_logging, load_config, c
 
 
 def main():
-    # cfg = get_args_config()
-    cfg = load_config('./configs/config.yaml')
+    cfg = get_args_config()
     output_dir = get_output_dir(cfg.test.output_dir, cfg.test.name)
     logger = setup_logging(cfg, output_dir)
     logger.info('Test Log %s' % time.strftime("%c"))
@@ -45,7 +44,7 @@ def main():
 
     # Run evaluation
     logger.info("Start testing...")
-    preds = _test(model, postprocessor, test_loader, device, cfg.test.threshold, output_dir=output_dir, show=cfg.test.show)
+    preds = tester(model, postprocessor, test_loader, device, cfg.test.threshold, output_dir=output_dir, show=cfg.test.show)
 
 
 if __name__ == '__main__':

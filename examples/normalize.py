@@ -7,14 +7,14 @@
 @Email   : zhoufei.net@gmail.com
 @Desc    : 计算图像的归一化均值和标准差
 @Usage   :
-处理图像进度: 100%|██████████| 23075/23075 [07:28<00:00, 51.49it/s]
+处理图像进度: 100%|███████████████████████| 22131/22131 [10:50<00:00, 34.02it/s]
 ✅所有图像处理完成！
-RGB 所有图像的平均均值（每个通道）： [0.3408843  0.35463604 0.25760925]
-RGB 所有图像的平均标准差（每个通道）： [0.13118044 0.13446163 0.11750145]
-处理图像进度: 100%|██████████| 23075/23075 [08:51<00:00, 43.45it/s]
+RGB 所有图像的平均均值（每个通道）： [0.35494163 0.36840918 0.27330935]
+RGB 所有图像的平均标准差（每个通道）： [0.13099624 0.13373924 0.11775094]
+处理图像进度: 100%|███████████████████████| 22131/22131 [11:33<00:00, 31.92it/s]
 ✅所有图像处理完成！
-TIR 所有图像的平均均值（每个通道）： [0.61530983 0.11621187 0.37373389]
-TIR 所有图像的平均标准差（每个通道）： [0.23613747 0.1560921  0.18800327]
+TIR 所有图像的平均均值（每个通道）： [0.61420712 0.14948837 0.37343189]
+TIR 所有图像的平均标准差（每个通道）： [0.2323119  0.15830037 0.18179071]
 """
 import glob
 from tqdm import tqdm
@@ -75,14 +75,14 @@ def batch_calculate_mean_std(image_folder, image_extension="*.jpg", image_type="
 
 if __name__ == "__main__":
     # 设置图像文件夹路径
-    rgb_folder = "E:/Datasets/OdinMJ/train_val/RGB"  # 替换为你的图像文件夹路径
+    rgb_folder = "/sxs/zhoufei/AAGU/dataset/OdinMJ2/train/RGB"  # 替换为你的图像文件夹路径
     rgb_extension = "*.jpg"  # 替换为你的图像文件扩展名，例如 "*.png" 或 "*.bmp"
     rgb_type = "RGB"
     overall_mean, overall_std = batch_calculate_mean_std(rgb_folder, rgb_extension, rgb_type)
     print(f"{rgb_type} 所有图像的平均均值（每个通道）： {overall_mean}")
     print(f"{rgb_type} 所有图像的平均标准差（每个通道）： {overall_std}")
 
-    tir_folder = "E:/Datasets/OdinMJ/train_val/TIR"  # 替换为你的图像文件夹路径
+    tir_folder = "/sxs/zhoufei/AAGU/dataset/OdinMJ2/train/TIR"  # 替换为你的图像文件夹路径
     tir_extension = "*.jpg"  # 替换为你的图像文件扩展名，例如 "*.png" 或 "*.bmp"
     tir_type = "TIR"
     # 调用函数并打印结果

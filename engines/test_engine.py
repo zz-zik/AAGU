@@ -21,7 +21,7 @@ from dataloader import mscoco_category2label, DeNormalize
 
 
 @torch.no_grad()
-def _test(
+def tester(
         model: torch.nn.Module,
         postprocessor,
         dataloader,
