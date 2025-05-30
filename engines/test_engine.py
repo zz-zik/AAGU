@@ -80,6 +80,7 @@ def tester(
                     }
 
                     image_name = os.path.splitext(target['image_name'])[0]
+                    h, w = rgb_images.shape[-2:]
                     preds.append({
                         "boxes": filtered_result["boxes"],
                         "labels": filtered_result['labels'],
