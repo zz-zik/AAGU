@@ -21,6 +21,9 @@ class DFINE(nn.Module):
             use_lab=cfg.model.backbone.use_lab,
             img_size=cfg.model.img_size,
             return_idx=cfg.model.backbone.return_idx,
+            out_channels=cfg.model.abam.out_channels,
+            num_anchors=cfg.model.abam.num_anchors,
+            align_thres=cfg.model.abam.align_thres,
             pretrained=cfg.model.backbone.pretrained
         )
         # self.backbone = build_backbone(cfg)
@@ -59,11 +62,15 @@ class DFINE(nn.Module):
         )
 
     def forward(self, rgb, tir, targets=None):
-        x = self.fusion(rgb, tir)
+        x, align_infos = self.fusion(rgb, tir)
         x = self.encoder(x)
         x = self.decoder(x, targets)
 
-        return x
+        # if self.training:
+        #     return x, align_infos
+        # else:
+        #     return x
+        return x, align_infos
 
     def deploy(
             self,
@@ -97,8 +104,8 @@ if __name__ == "__main__":
     ]
 
     model = DFINE(cfg)
-    output = model(rgb, tir, targets)
-    # print(output)
+    output, align_infos = model(rgb, tir, targets)
+    # print(align_infos)
 
     from thop import profile
     flops, params = profile(model, inputs=(rgb, tir))

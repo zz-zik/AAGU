@@ -6,7 +6,7 @@ num_workers: 4
 resume: null  # 如果存在，则恢复训练
 
 data:
-  data_root: './dataset/OdinMJ2'
+  data_root: './dataset/OdinMJ_'
   data_format: 'default'  # [default, custom]
   label_format: 'yolo'  # [yolo, coco]
   labels: ["People"]  # 类别列表, 默认从0开始
@@ -19,7 +19,7 @@ data:
     gamma_correction: [0.0, 0.0]        # Gamma 校正概率, gamma范围
     random_erase: 0.0                   # 随机擦除概率
     blur_sigma: [0.0, 0.0, 0.0]         # 高斯模糊（暂时关闭）,[sigma, min, max]
-    jitter_drift: 0.03                  # 空间抖动偏移数据增强
+    jitter_drift: 0.04                  # 空间抖动偏移数据增强
 
 model:
   num_classes: 1
@@ -29,13 +29,11 @@ model:
     name: 'B5'
     use_lab: False
     return_idx: [1, 2, 3]
-    out_channels: [512, 1024, 2048]
     pretrained: True  # 是否使用BackBone预训练权重
-  aagf:
-    roi_sizes: [14, 7, 3]
-    use_confidence: True # 置信度融合
-    use_attention: False  # 相似度融合
-    use_similarity: False  # 注意力融合
+  abam:
+    out_channels: [512, 1024, 2048]      # 输出通道数
+    num_anchors: 15                      # 锚框个数
+    align_thres: 0.3                     # 对齐阈值
 
   encoder:
     in_channels: [512, 1024, 2048]
@@ -99,6 +97,18 @@ criterion:
       cost_giou: 2
     alpha: 0.25
     gamma: 2.0
+  abam:
+    offset_weight: 1.0                     # 偏移量损失权重
+    confidence_weight: 0.5                 # 置信度损失权重
+    alignment_weight: 2.0                  # 对齐损失权重
+    balance_weight: 0.3                    # 模态平衡损失权重
+    smoothness_weight: 0.2                 # 空间平滑损失权重
+    target_guided_weight: 1.5              # 目标引导损失权重
+    class_aware_weight: 0.5                # 类别感知损失权重
+    target_alignment_ratio: 0.8            # 对齐目标权重
+    modality_bias: 0.7                     # 模态偏向权重 (0.5=均衡, <0.5=偏向RGB, >0.5=偏向TIR)
+    use_target_guidance: True              # 是否使用目标引导
+
 
 logger:
   log_name: 'Seg_log'
@@ -128,5 +138,5 @@ test:
   device: 'cuda:2'
   output_dir: "./work_dirs"
   name: "test"
-  weights_dir: "./work_dirs/train_base/checkpoints/best.pth"
+  weights_dir: "./work_dirs/train/checkpoints/best.pth"
   show: True

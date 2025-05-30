@@ -49,13 +49,13 @@ class TrainingEngine:
         random.seed(seed)
 
         # Initialize model and criterion
-        self.model, self.criterion = build_model(cfg, training=True)
+        self.model, self.criterions = build_model(cfg, training=True)
         self.model.to(self.device)
-        if isinstance(self.criterion, tuple) and len(self.criterion) == 2:
-            for loss in self.criterion:
+        if isinstance(self.criterions, tuple) and len(self.criterions) == 2:
+            for loss in self.criterions:
                 loss.to(self.device)
         else:
-            self.criterion.to(self.device)
+            self.criterions.to(self.device)
 
         self.model_without_ddp = self.model
         self.n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -146,7 +146,7 @@ class TrainingEngine:
 
         for epoch in range(self.start_epoch, self.cfg.training.epochs):
             t1 = time.time()
-            stat = train(self.model, self.criterion, self.train_dataloader, self.optimizer, self.device,
+            stat = train(self.model, self.criterions, self.train_dataloader, self.optimizer, self.device,
                          epoch)
             t2 = time.time()
 
@@ -172,7 +172,7 @@ class TrainingEngine:
             # Perform evaluation
             if epoch % self.cfg.training.eval_freq == 0 and epoch >= self.cfg.training.start_eval:
                 t_eval_start = time.time()
-                metrics = evaluate(self.model, self.criterion, self.postprocessor, self.val_dataloader, self.device, epoch)
+                metrics = evaluate(self.model, self.criterions, self.postprocessor, self.val_dataloader, self.device, epoch)
                 t_eval_end = time.time()
 
                 if self.cfg.training.scheduler == 'plateau':

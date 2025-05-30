@@ -8,6 +8,8 @@
 @Desc    : 训练引擎
 @Usage   : pycocotools
 """
+from typing import Tuple
+
 import math
 import sys
 import numpy as np
@@ -160,7 +162,7 @@ def det_metrics(gt_all, preds_all):
 
 def train(
         model: torch.nn.Module,
-        criterion: torch.nn.Module,
+        criterions: Tuple[torch.nn.Module, torch.nn.Module],
         dataloader,
         optimizer: torch.optim.Optimizer,
         device: torch.device,
@@ -170,7 +172,9 @@ def train(
 ):
     """训练一个epoch - 参考D-FINE实现"""
     model.train()
+    criterion, criterion_offset = criterions
     criterion.train()
+    criterion_offset.train()
 
     total_loss = 0.0
     total_samples = 0
@@ -194,7 +198,7 @@ def train(
             # 混合精度训练
             if scaler is not None:
                 with torch.autocast(device_type=str(device), cache_enabled=True):
-                    outputs = model(rgb_images, tir_images, targets=targets)
+                    outputs, align_infos = model(rgb_images, tir_images, targets=targets)
 
                 # 检查NaN
                 if hasattr(outputs, 'pred_boxes') and torch.isnan(outputs["pred_boxes"]).any():
@@ -202,9 +206,10 @@ def train(
                     continue
 
                 with torch.autocast(device_type=str(device), enabled=False):
-                    loss_dict = criterion(outputs, targets, **metas)
+                    loss_dfine = criterion(outputs, targets, **metas)
+                    loss_offset, _ = criterion_offset(align_infos, targets)
 
-                loss = sum(loss_dict.values())
+                loss = sum(loss_dfine.values()) + loss_offset
                 scaler.scale(loss).backward()
 
                 if max_norm > 0:
@@ -216,10 +221,11 @@ def train(
                 optimizer.zero_grad()
 
             else:
-                outputs = model(rgb_images, tir_images, targets=targets)
-                loss_dict = criterion(outputs, targets, **metas)
+                outputs, align_infos = model(rgb_images, tir_images, targets=targets)
+                loss_dfine = criterion(outputs, targets, **metas)
+                loss_offset, _ = criterion_offset(align_infos, targets)
 
-                loss = sum(loss_dict.values())
+                loss = sum(loss_dfine.values()) + loss_offset
                 optimizer.zero_grad()
                 loss.backward()
 
@@ -239,7 +245,7 @@ def train(
             # 检查loss是否有限
             if not math.isfinite(loss.item()):
                 print(f"Loss is {loss.item()}, stopping training")
-                print(loss_dict)
+                print(loss_dfine)
                 sys.exit(1)
 
             total_loss += loss.item() * rgb_images.size(0)
@@ -261,7 +267,7 @@ def train(
 @torch.no_grad()
 def evaluate(
         model: torch.nn.Module,
-        criterion: torch.nn.Module,
+        criterion: Tuple[torch.nn.Module, torch.nn.Module],
         postprocessor,  # DetNMSPostProcessor
         dataloader,
         device: torch.device,
@@ -270,6 +276,7 @@ def evaluate(
 ):
     """评估模型"""
     model.eval()
+    criterion, criterion_offset = criterion
     criterion.eval()
     if postprocessor is not None:
         postprocessor.eval()
@@ -288,12 +295,13 @@ def evaluate(
             targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in target.items()}
                        for target in targets]
 
-            outputs = model(rgb_images, tir_images)
+            outputs, align_infos = model(rgb_images, tir_images)
 
             # 计算损失
             metas = dict(epoch=epoch, step=batch_idx)
-            loss_dict = criterion(outputs, targets, **metas)
-            loss = sum(loss_dict.values())
+            loss_dfine = criterion(outputs, targets, **metas)
+            loss_offset, _ = criterion_offset(align_infos, targets)
+            loss = sum(loss_dfine.values()) + loss_offset
             total_loss += loss.item() * rgb_images.size(0)
             total_samples += rgb_images.size(0)
 

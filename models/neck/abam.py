@@ -103,7 +103,7 @@ class TFAM(nn.Module):
 class AnchorBoxAlignment(nn.Module):
     """轻量级锚框对齐模块"""
 
-    def __init__(self, in_channels, num_anchors=9):
+    def __init__(self, in_channels, num_anchors=9, align_thres=0.5):
         super(AnchorBoxAlignment, self).__init__()
         self.num_anchors = num_anchors
 
@@ -124,7 +124,7 @@ class AnchorBoxAlignment(nn.Module):
         )
 
         # 对齐阈值
-        self.alignment_threshold = 0.5
+        self.align_thres = align_thres
 
     def forward(self, rgb_feat, tir_feat):
         concat_feat = torch.cat([rgb_feat, tir_feat], dim=1)
@@ -146,7 +146,7 @@ class AnchorBoxAlignment(nn.Module):
             offsets[:, :, 0, :, :] ** 2 + offsets[:, :, 1, :, :] ** 2)  # [B, num_anchors, H, W]
 
         # 创建对齐掩码（偏移量小于阈值认为对齐良好）
-        alignment_mask = (offset_magnitude < self.alignment_threshold).float()  # [B, num_anchors, H, W]
+        alignment_mask = (offset_magnitude < self.align_thres).float()  # [B, num_anchors, H, W]
 
         return offsets, confidences, alignment_mask
 
@@ -154,7 +154,7 @@ class AnchorBoxAlignment(nn.Module):
 class ABAM(nn.Module):
     """轻量级锚框注意力引导融合模块"""
 
-    def __init__(self, in_channels, num_anchors=3):  # 减少锚框数量
+    def __init__(self, in_channels, num_anchors=9, align_thres=0.5):  # 减少锚框数量
         super(ABAM, self).__init__()
         self.in_channels = in_channels
         self.num_anchors = num_anchors
@@ -163,7 +163,7 @@ class ABAM(nn.Module):
         self.tfam = TFAM(in_channels)
 
         # 锚框对齐模块
-        self.alignment_module = AnchorBoxAlignment(in_channels, num_anchors)
+        self.alignment_module = AnchorBoxAlignment(in_channels, num_anchors, align_thres)
 
         # 简化的自适应融合
         self.adaptive_fusion = nn.Sequential(
@@ -173,6 +173,9 @@ class ABAM(nn.Module):
 
         # 残差连接权重
         self.residual_weight = nn.Parameter(torch.tensor(0.1))
+
+        # 对齐阈值
+        self.align_thres = align_thres
 
     def forward(self, rgb_feat, tir_feat):
         """
@@ -202,10 +205,10 @@ class ABAM(nn.Module):
 
         # 对齐良好时直接融合，对齐不良时根据置信度选择
         final_fused = torch.where(
-            alignment_score > 0.5,
+            alignment_score > self.align_thres,
             initial_fused,  # 对齐良好，使用融合特征
             torch.where(
-                confidence_mask > 0.5,
+                confidence_mask > self.align_thres,
                 rgb_feat,  # RGB置信度高
                 tir_feat  # TIR置信度高
             )
@@ -218,7 +221,7 @@ class ABAM(nn.Module):
         output_feat = refined_feat + self.residual_weight * initial_fused
 
         # 构建对齐信息
-        alignment_info = {
+        align_info = {
             'offsets': offsets,
             'confidences': confidences,
             'alignment_mask': alignment_mask,
@@ -227,7 +230,7 @@ class ABAM(nn.Module):
             'alignment_ratio': torch.mean(alignment_mask.float()).item()
         }
 
-        return output_feat, alignment_info
+        return output_feat, align_info
 
 
 # class MultiScaleABAM(nn.Module):
@@ -272,10 +275,10 @@ class ABAM(nn.Module):
 class MultiScaleABAM(nn.Module):
     """轻量级多尺度ABAM网络"""
 
-    def __init__(self, in_channels_list=[512, 1024, 2048], num_anchors=9):
+    def __init__(self, in_channels_list=[512, 1024, 2048], num_anchors=9, align_thres=0.5):
         super(MultiScaleABAM, self).__init__()
         self.abam_modules = nn.ModuleList([
-            ABAM(in_channels, num_anchors) for in_channels in in_channels_list
+            ABAM(in_channels, num_anchors, align_thres) for in_channels in in_channels_list
         ])
 
     def forward(self, rgb_feats, tir_feats):
@@ -289,16 +292,16 @@ class MultiScaleABAM(nn.Module):
             alignment_infos: 各尺度的对齐信息列表
         """
         fused_feats = []
-        alignment_infos = []
+        align_infos = []
 
         for i, abam_module in enumerate(self.abam_modules):
             # ABAM融合
-            fused_feat, alignment_info = abam_module(rgb_feats[i], tir_feats[i])
+            fused_feat, align_info = abam_module(rgb_feats[i], tir_feats[i])
 
             fused_feats.append(fused_feat)
-            alignment_infos.append(alignment_info)
+            align_infos.append(align_info)
 
-        return fused_feats, alignment_infos
+        return fused_feats, align_infos
 
 
 # 测试代码
@@ -343,7 +346,6 @@ if __name__ == "__main__":
         torch.randn(1, 1024, 32, 40),  # 尺度2
         torch.randn(1, 2048, 16, 20),  # 尺度3
     ]
-
 
     with torch.no_grad():
         fused_feats, alignment_infos = multi_scale_model(rgb_feats, tir_feats)
