@@ -18,7 +18,7 @@ def tensor_to_image(img_tensor):
     """将 PyTorch Tensor 转换为 NumPy 图像（HWC 格式）"""
     img = img_tensor.cpu().numpy()
     img = np.transpose(img, (1, 2, 0))  # CHW -> HWC
-    img = (img * 255).astype(np.uint8)  # [0,1] -> [0,255]
+    img = img.astype(np.uint8)
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # RGB -> BGR for OpenCV
 
 
@@ -89,14 +89,14 @@ if __name__ == '__main__':
     img_rgb, img_tir, target = train_dataset[idx]
 
     # 转换为图像
-    denorm_rgb = DeNormalize(mean=[0.341, 0.355, 0.258], std=[0.131, 0.135, 0.118])
+    denorm_rgb = DeNormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     denorm_tir = DeNormalize(mean=[0.615, 0.116, 0.374], std=[0.236, 0.156, 0.188])
 
-    rgb_img = tensor_to_image(denorm_rgb(img_rgb.clone()))
-    tir_img = tensor_to_image(denorm_tir(img_tir.clone()))
+    # rgb_img = tensor_to_image(denorm_rgb(img_rgb.clone()))
+    # tir_img = tensor_to_image(denorm_tir(img_tir.clone()))
 
-    # rgb_img = tensor_to_image(img_rgb.clone())
-    # tir_img = tensor_to_image(img_tir.clone())
+    rgb_img = tensor_to_image(img_rgb.clone())
+    tir_img = tensor_to_image(img_tir.clone())
 
     # 绘制边界框
     boxes = target['boxes']

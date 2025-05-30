@@ -15,6 +15,7 @@ from typing import Any, Dict, Tuple
 import torch
 import torch.nn as nn
 from torchvision.transforms import functional as F, Compose, Normalize
+from torchvision import transforms
 
 
 class Transforms(nn.Module):
@@ -26,12 +27,12 @@ class Transforms(nn.Module):
         self.box_fmt = box_fmt
 
         # 定义标准化变换
-        # self.rgb_transform = Compose([
-        #     Normalize(
-        #         mean=[0.485, 0.456, 0.406],
-        #         std=[0.229, 0.224, 0.225]
-        #     ),
-        # ])
+        self.rgb_transform = Compose([
+            Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            ),
+        ])
         #
         # self.tir_transform = Compose([
         #     Normalize(
@@ -39,12 +40,12 @@ class Transforms(nn.Module):
         #         std=[0.317, 0.174, 0.191]
         #     ),
         # ])
-        self.rgb_transform = Compose([
-            Normalize(
-                mean=[0.341, 0.355, 0.258],
-                std=[0.131, 0.135, 0.118]
-            ),
-        ])
+        # self.rgb_transform = Compose([
+        #     Normalize(
+        #         mean=[0.341, 0.355, 0.258],
+        #         std=[0.131, 0.135, 0.118]
+        #     ),
+        # ])
 
         self.tir_transform = Compose([
             Normalize(
@@ -57,13 +58,13 @@ class Transforms(nn.Module):
         self.transforms = []
 
         transform_params = {
-            'RandomFlip': kwargs.get('random_flip_prob', 0.0),
+            'RandomFlip': kwargs.get('random_flip', 0.0),
             'RandomRotation': kwargs.get('random_rotation', 0.0),
             'RandomResize': kwargs.get('random_resize', (0.0, 0.0)),
             'ColorJitter': kwargs.get('color_jitter', (0.0, 0.0, 0.0, 0.0)),
             'GammaCorrection': kwargs.get('gamma_correction', (0.0, 0.0)),
-            'RandomErasing': kwargs.get('random_erase_prob', 0.0),
-            'GaussianBlur': kwargs.get('blur_sigma_prob', (0.0, 0.0, 0.0)),
+            'RandomErasing': kwargs.get('random_erase', 0.0),
+            'GaussianBlur': kwargs.get('blur_sigma', (0.0, 0.0, 0.0)),
             'RandomJitter': kwargs.get('jitter_drift', 0.0),
         }
         prob = kwargs.get('prob', 0.0)
@@ -77,10 +78,8 @@ class Transforms(nn.Module):
                         self.transforms.append(RandomResize(scale_range=scale_range, prob=prob))
                 elif name == 'ColorJitter':
                     if isinstance(param, (list, tuple)) and len(param) == 4:
-                        brightness, contrast, saturation, hue = param
-                        self.transforms.append(
-                            ColorJitter(brightness=brightness, contrast=contrast, saturation=saturation, hue=hue,
-                                        prob=prob))
+                        color_jitter = (float(param[0]), float(param[1]), float(param[2]), float(param[3]))
+                        self.transforms.append(ColorJitter(color_jitter=color_jitter, prob=prob))
                 elif name == 'GammaCorrection':
                     if isinstance(param, (list, tuple)) and len(param) == 2:
                         gamma_range = (float(param[0]), float(param[1]))
@@ -96,7 +95,7 @@ class Transforms(nn.Module):
                 elif name == 'RandomRotation':
                     self.transforms.append(RandomRotation(degrees=param, prob=prob))
                 elif name == 'RandomErasing':
-                    self.transforms.append(RandomErasing(p=param, scale=(0.02, 0.33), ratio=(0.3, 3.3)))
+                    self.transforms.append(RandomErasing(prob=param, scale=(0.02, 0.33), ratio=(0.3, 3.3)))
                 elif name == 'RandomJitter':
                     self.transforms.append(RandomJitter(max_drift=param, prob=prob))
 
@@ -247,25 +246,44 @@ class RandomResize(nn.Module):
         return rgb, tir, target
 
 
-
 class ColorJitter(nn.Module):
-    """颜色扰动"""
+    """颜色扰动变换 - 修正版本"""
 
-    def __init__(self, brightness: float = 0.2, contrast: float = 0.2, saturation: float = 0.2, hue: float = 0.1,
-                 prob: float = 0.5):
+    def __init__(self, color_jitter: Tuple[float, float, float, float], prob: float = 0.5):
         super().__init__()
-        self.color_jitter = torchvision.transforms.ColorJitter(brightness, contrast, saturation, hue)
+        self.brightness = color_jitter[0]
+        self.contrast = color_jitter[1]
+        self.saturation = color_jitter[2]
+        self.hue = color_jitter[3]
         self.prob = prob
 
     def forward(self, rgb: torch.Tensor, tir: torch.Tensor, target: Dict[str, Any]) -> Tuple[
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
-            rgb = self.color_jitter(rgb)
+            # 将 [0, 255] 转换为 [0, 1] 以便使用 torchvision.transforms.ColorJitter
+            rgb_normalized = rgb / 255.0
+            tir_normalized = tir / 255.0
+
+            # 使用torchvision的ColorJitter
+            jitter = transforms.ColorJitter(
+                brightness=self.brightness,
+                contrast=self.contrast,
+                saturation=self.saturation,
+                hue=self.hue
+            )
+
+            rgb_normalized = jitter(rgb_normalized)
+            tir_normalized = jitter(tir_normalized)
+
+            # 转换回 [0, 255] 范围
+            rgb = rgb_normalized * 255.0
+            tir = tir_normalized * 255.0
+
         return rgb, tir, target
 
 
 class GammaCorrection(nn.Module):
-    """Gamma校正"""
+    """Gamma 校正变换"""
 
     def __init__(self, gamma_range: Tuple[float, float] = (0.8, 1.2), prob: float = 0.5):
         super().__init__()
@@ -276,7 +294,15 @@ class GammaCorrection(nn.Module):
         torch.Tensor, torch.Tensor, Dict[str, Any]]:
         if torch.rand(1) < self.prob:
             gamma = float(torch.empty(1).uniform_(self.gamma_range[0], self.gamma_range[1]))
-            rgb = F.adjust_gamma(rgb, gamma)
+
+            # 归一化到[0,1]，应用gamma校正，再恢复
+            rgb = torch.pow(rgb / 255.0, gamma) * 255.0
+            tir = torch.pow(tir / 255.0, gamma) * 255.0
+
+            # 确保值在合理范围内
+            rgb = torch.clamp(rgb, 0, 255)
+            tir = torch.clamp(tir, 0, 255)
+
         return rgb, tir, target
 
 
@@ -378,10 +404,10 @@ def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int,
 class RandomErasing(nn.Module):
     """随机擦除"""
 
-    def __init__(self, p: float = 0.5, scale: Tuple[float, float] = (0.02, 0.33),
+    def __init__(self, prob: float = 0.5, scale: Tuple[float, float] = (0.02, 0.33),
                  ratio: Tuple[float, float] = (0.3, 3.3), value: int = 0):
         super().__init__()
-        self.p = p
+        self.prob = prob
         self.scale = scale
         self.ratio = ratio
         self.value = value

@@ -5,7 +5,7 @@
 @Time    : 2025/5/30
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
-@Desc    : 增强版锚框注意力引导融合损失 - 加入目标信息引导 (修复设备问题)
+@Desc    : 锚框注意力引导融合损失 - 加入目标信息引导 (修复设备问题)
 """
 import torch
 import torch.nn as nn
@@ -99,7 +99,7 @@ def create_target_mask(targets: List[Dict], feature_sizes: List[Tuple[int, int]]
 
 
 class ABAMAlignmentLoss(nn.Module):
-    """增强版ABAM对齐损失函数 - 加入目标信息引导"""
+    """ABAM对齐损失函数 - 加入目标信息引导"""
 
     def __init__(self,
                  offset_weight=1.0,

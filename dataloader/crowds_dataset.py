@@ -158,11 +158,11 @@ class Crowds(Dataset):
         # Step 1: 使用 OpenCV 读取图像，并转为 RGB 格式
         rgb_img = cv2.imread(rgb_img_path)
         rgb_img = cv2.cvtColor(rgb_img, cv2.COLOR_BGR2RGB)
-        rgb_img = torch.from_numpy(rgb_img).permute(2, 0, 1).float() / 255.0
+        rgb_img = torch.from_numpy(rgb_img).permute(2, 0, 1).float()
 
         tir_img = cv2.imread(tir_img_path)
         tir_img = cv2.cvtColor(tir_img, cv2.COLOR_BGR2RGB)
-        tir_img = torch.from_numpy(tir_img).permute(2, 0, 1).float() / 255.0
+        tir_img = torch.from_numpy(tir_img).permute(2, 0, 1).float()
 
         # Step 2: 读取标签
         target = {

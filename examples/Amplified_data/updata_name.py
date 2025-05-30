@@ -13,8 +13,8 @@ from tkinter import Tk, filedialog
 
 
 def rename_files(root_dir, start_number):
-    subsets = ['train', 'test', 'val']
-    file_types = ['rgb', 'tir', 'labels', 'annotations']
+    subsets = ['false_tag']
+    file_types = ['RGB', 'TIR', 'labels']
 
     for subset in subsets:
         subset_dir = os.path.join(root_dir, subset)
@@ -23,7 +23,7 @@ def rename_files(root_dir, start_number):
             continue
 
         # 获取 rgb 文件夹中的文件列表作为基准
-        rgb_dir = os.path.join(subset_dir, 'rgb')
+        rgb_dir = os.path.join(subset_dir, 'RGB')
         if not os.path.exists(rgb_dir):
             print(f"警告：未找到{subset}/rgb文件夹，跳过")
             continue
@@ -47,7 +47,7 @@ def rename_files(root_dir, start_number):
                 elif file_type == 'annotations':
                     original_ext = '.txt'  # 注释文件使用.txt
                 elif file_type == 'labels':
-                    original_ext = '.xml'  # 标签文件使用.xml
+                    original_ext = '.txt'  # 标签文件使用.xml
                 else:
                     _, original_ext = os.path.splitext(file_name)  # 其他情况保留原扩展名
 
@@ -71,7 +71,7 @@ def rename_files(root_dir, start_number):
                 elif file_type == 'annotations':
                     new_file_name = f"{new_name}.txt"
                 elif file_type == 'labels':
-                    new_file_name = f"{new_name}.xml"
+                    new_file_name = f"{new_name}.txt"
                 else:
                     _, original_ext = os.path.splitext(file_name)
                     new_file_name = f"{new_name}{original_ext}"
@@ -89,9 +89,9 @@ def rename_files(root_dir, start_number):
 
 def main():
     # 选择根目录
-    root_dir = '/sxs/DataSets/DroneRGBTs'
+    root_dir = '/sxs/zhoufei/AAGU/dataset/OdinMJ2'
 
-    start_number = 32000
+    start_number = 31501
     # 执行重命名
     rename_files(root_dir, start_number)
     print("重命名完成！")
