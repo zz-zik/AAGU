@@ -1,12 +1,12 @@
 name: 'train'
-device: 'cuda:0'
+device: 'cuda:2'
 seed: 42
 output_dir: ./work_dirs
 num_workers: 4
 resume: null  # 如果存在，则恢复训练
 
 data:
-  data_root: './dataset/OdinMJ_'
+  data_root: './dataset/OdinMJ3'
   data_format: 'default'  # [default, custom]
   label_format: 'yolo'  # [yolo, coco]
   labels: ["People"]  # 类别列表, 默认从0开始
@@ -116,7 +116,7 @@ logger:
 
 training:
   start_epoch: 1
-  epochs: 200
+  epochs: 100
   optimizer: 'adamw' # [sgd, adam, adamw]
   betas: [0.9, 0.999]
   eps: 0.00000001

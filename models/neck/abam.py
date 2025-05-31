@@ -1,12 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-@Project : AAGU
-@FileName: abam.py
-@Time    : 2025/5/29 下午12:38
-@Author  : ZhouFei
-@Email   : zhoufei.net@gmail.com
-@Desc    : 锚框注意力引导融合模块
-@Usage   : 
+修复ABAM模块中权重维度不匹配的问题
+主要问题：TFAM模块的weight_predictor输出维度不正确
 """
 import torch
 import torch.nn as nn
@@ -48,7 +43,7 @@ class SpatialAttention(nn.Module):
 
 
 class TFAM(nn.Module):
-    """轻量级时序融合注意力模块（TFAM）"""
+    """修复后的轻量级时序融合注意力模块（TFAM）"""
 
     def __init__(self, in_channels):
         super(TFAM, self).__init__()
@@ -73,22 +68,43 @@ class TFAM(nn.Module):
         self.channel_attention = ChannelAttention(in_channels, reduction=16)
         self.spatial_attention = SpatialAttention()
 
-        # 简化的融合权重学习
+        # ====== 修复：改进的融合权重学习 ======
+        # 问题：原来的weight_predictor使用AdaptiveAvgPool2d(1)，导致输出维度变成[B, 2, 1, 1]
+
+        # 方案1：使用卷积层保持空间维度（推荐）
         self.weight_predictor = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(in_channels, 2, 1),
-            nn.Softmax(dim=1)
+            nn.Conv2d(in_channels, 16, 1, bias=False),  # 先降维
+            nn.BatchNorm2d(16),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(16, 2, 1, bias=False),  # 输出2个通道分别表示rgb和tir权重
+            nn.Softmax(dim=1)  # 在通道维度上进行softmax，确保权重和为1
         )
+
+        # 方案2：保持全局权重但扩展到空间维度（备选）
+        # self.weight_predictor = nn.Sequential(
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Conv2d(in_channels, 2, 1),
+        #     nn.Softmax(dim=1)
+        # )
 
     def forward(self, rgb_feat, tir_feat):
         # 特征变换
         rgb_transformed = self.rgb_transform(rgb_feat)
         tir_transformed = self.tir_transform(tir_feat)
 
-        # 简单的加权融合
-        fusion_weights = self.weight_predictor(rgb_transformed + tir_transformed)
-        rgb_weight = fusion_weights[:, 0:1, :, :]
-        tir_weight = fusion_weights[:, 1:2, :, :]
+        # ====== 修复：权重预测保持空间维度 ======
+        # 输入融合特征用于权重预测
+        fusion_input = rgb_transformed + tir_transformed  # [B, C, H, W]
+        fusion_weights = self.weight_predictor(fusion_input)  # [B, 2, H, W]
+
+        # 分离rgb和tir权重，现在维度是[B, 1, H, W]
+        rgb_weight = fusion_weights[:, 0:1, :, :]  # [B, 1, H, W]
+        tir_weight = fusion_weights[:, 1:2, :, :]  # [B, 1, H, W]
+
+        # 方案2的处理方式（如果使用全局权重）：
+        # fusion_weights = self.weight_predictor(fusion_input)  # [B, 2, 1, 1]
+        # rgb_weight = fusion_weights[:, 0:1, :, :].expand(-1, -1, H, W)  # 扩展到[B, 1, H, W]
+        # tir_weight = fusion_weights[:, 1:2, :, :].expand(-1, -1, H, W)  # 扩展到[B, 1, H, W]
 
         # 加权融合
         fused_feat = rgb_transformed * rgb_weight + tir_transformed * tir_weight
@@ -152,14 +168,14 @@ class AnchorBoxAlignment(nn.Module):
 
 
 class ABAM(nn.Module):
-    """轻量级锚框注意力引导融合模块"""
+    """修复后的轻量级锚框注意力引导融合模块"""
 
-    def __init__(self, in_channels, num_anchors=9, align_thres=0.5):  # 减少锚框数量
+    def __init__(self, in_channels, num_anchors=9, align_thres=0.5):
         super(ABAM, self).__init__()
         self.in_channels = in_channels
         self.num_anchors = num_anchors
 
-        # TFAM模块
+        # 使用修复后的TFAM模块
         self.tfam = TFAM(in_channels)
 
         # 锚框对齐模块
@@ -225,52 +241,13 @@ class ABAM(nn.Module):
             'offsets': offsets,
             'confidences': confidences,
             'alignment_mask': alignment_mask,
-            'rgb_weight': rgb_weight,
-            'tir_weight': tir_weight,
+            'rgb_weight': rgb_weight,  # 现在维度正确：[B, 1, H, W]
+            'tir_weight': tir_weight,  # 现在维度正确：[B, 1, H, W]
             'alignment_ratio': torch.mean(alignment_mask.float()).item()
         }
 
         return output_feat, align_info
 
-
-# class MultiScaleABAM(nn.Module):
-#     """轻量级多尺度ABAM网络"""
-#
-#     def __init__(self, in_channels_list=[512, 1024, 2048], num_anchors=9):
-#         super(MultiScaleABAM, self).__init__()
-#         self.abam_modules = nn.ModuleList([
-#             ABAM(in_channels, num_anchors) for in_channels in in_channels_list
-#         ])
-#
-#         # 简化的特征金字塔融合
-#         self.fpn_fusion = nn.ModuleList([
-#             nn.Conv2d(in_channels, 256, 1, bias=False) for in_channels in in_channels_list
-#         ])
-#
-#     def forward(self, rgb_feats, tir_feats):
-#         """
-#         Args:
-#             rgb_feats: RGB特征金字塔列表 [feat1, feat2, feat3]
-#             tir_feats: TIR特征金字塔列表 [feat1, feat2, feat3]
-#
-#         Returns:
-#             fused_feats: 融合后的特征金字塔列表
-#             alignment_infos: 各尺度的对齐信息列表
-#         """
-#         fused_feats = []
-#         alignment_infos = []
-#
-#         for i, (abam_module, fpn_conv) in enumerate(zip(self.abam_modules, self.fpn_fusion)):
-#             # ABAM融合
-#             fused_feat, alignment_info = abam_module(rgb_feats[i], tir_feats[i])
-#
-#             # FPN标准化
-#             fused_feat = fpn_conv(fused_feat)
-#
-#             fused_feats.append(fused_feat)
-#             alignment_infos.append(alignment_info)
-#
-#         return fused_feats, alignment_infos
 
 class MultiScaleABAM(nn.Module):
     """轻量级多尺度ABAM网络"""
@@ -304,63 +281,62 @@ class MultiScaleABAM(nn.Module):
         return fused_feats, align_infos
 
 
-# 测试代码
+# 测试修复后的代码
 if __name__ == "__main__":
+    print("=== 测试修复后的ABAM模块 ===")
+
     # 创建模型
     model = ABAM(in_channels=512, num_anchors=9)
 
     # 创建测试数据
-    rgb_feat = torch.randn(1, 512, 64, 80)
-    tir_feat = torch.randn(1, 512, 64, 80)
+    rgb_feat = torch.randn(2, 512, 64, 80)  # 增加batch_size测试
+    tir_feat = torch.randn(2, 512, 64, 80)
 
     # 前向传播
     with torch.no_grad():
         fused_feat, alignment_info = model(rgb_feat, tir_feat)
 
-    print("=== ABAM模块测试结果 ===")
     print(f"输入RGB特征形状: {rgb_feat.shape}")
     print(f"输入TIR特征形状: {tir_feat.shape}")
     print(f"输出融合特征形状: {fused_feat.shape}")
     print(f"对齐比例: {alignment_info['alignment_ratio']:.3f}")
     print(f"偏移量形状: {alignment_info['offsets'].shape}")
     print(f"置信度形状: {alignment_info['confidences'].shape}")
+    print(f"修复后 rgb_weight 形状: {alignment_info['rgb_weight'].shape}")  # 应该是 [2, 1, 64, 80]
+    print(f"修复后 tir_weight 形状: {alignment_info['tir_weight'].shape}")  # 应该是 [2, 1, 64, 80]
 
-    # 测试多尺度版本
-    print("\n=== 多尺度ABAM测试 ===")
+    # 验证权重和为1
+    weight_sum = alignment_info['rgb_weight'] + alignment_info['tir_weight']
+    print(f"权重和验证 (应该接近1.0): min={weight_sum.min():.4f}, max={weight_sum.max():.4f}")
+
+    print("\n=== 测试多尺度版本 ===")
     multi_scale_model = MultiScaleABAM()
-
-    from thop import profile
-
-    flops, params = profile(model, inputs=(rgb_feat, tir_feat))
-    print(f"neck FLOPs: {flops / 1e9:.2f} G, Params: {params / 1e6:.2f} M")
 
     # 创建多尺度测试数据
     rgb_feats = [
-        torch.randn(1, 512, 64, 80),  # 尺度1
-        torch.randn(1, 1024, 32, 40),  # 尺度2
-        torch.randn(1, 2048, 16, 20),  # 尺度3
+        torch.randn(2, 512, 64, 80),  # 尺度1
+        torch.randn(2, 1024, 32, 40),  # 尺度2
+        torch.randn(2, 2048, 16, 20),  # 尺度3
     ]
 
     tir_feats = [
-        torch.randn(1, 512, 64, 80),  # 尺度1
-        torch.randn(1, 1024, 32, 40),  # 尺度2
-        torch.randn(1, 2048, 16, 20),  # 尺度3
+        torch.randn(2, 512, 64, 80),  # 尺度1
+        torch.randn(2, 1024, 32, 40),  # 尺度2
+        torch.randn(2, 2048, 16, 20),  # 尺度3
     ]
 
     with torch.no_grad():
         fused_feats, alignment_infos = multi_scale_model(rgb_feats, tir_feats)
 
     for i, (fused_feat, alignment_info) in enumerate(zip(fused_feats, alignment_infos)):
-        print(f"尺度{i + 1} - 输出形状: {fused_feat.shape}, 对齐比例: {alignment_info['alignment_ratio']:.3f}")
+        print(f"尺度{i + 1}:")
+        print(f"  输出形状: {fused_feat.shape}")
+        print(f"  对齐比例: {alignment_info['alignment_ratio']:.3f}")
+        print(f"  rgb_weight形状: {alignment_info['rgb_weight'].shape}")
+        print(f"  tir_weight形状: {alignment_info['tir_weight'].shape}")
 
     # 计算模型参数量
     total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
     print(f"\n=== 模型信息 ===")
-    print(f"总参数量: {total_params:,}")
-    print(f"可训练参数量: {trainable_params:,}")
+    print(f"单尺度ABAM总参数量: {total_params:,}")
     print(f"模型大小: {total_params * 4 / 1024 / 1024:.2f} MB")
-
-    flops, params = profile(multi_scale_model, inputs=(rgb_feats, tir_feats))
-    print(f"neck FLOPs: {flops / 1e9:.2f} G, Params: {params / 1e6:.2f} M")

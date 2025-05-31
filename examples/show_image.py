@@ -18,7 +18,7 @@ def tensor_to_image(img_tensor):
     """将 PyTorch Tensor 转换为 NumPy 图像（HWC 格式）"""
     img = img_tensor.cpu().numpy()
     img = np.transpose(img, (1, 2, 0))  # CHW -> HWC
-    img = img.astype(np.uint8)
+    img = (img * 255).astype(np.uint8)
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)  # RGB -> BGR for OpenCV
 
 
