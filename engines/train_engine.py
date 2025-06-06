@@ -30,7 +30,7 @@ from engines import train, evaluate
 warnings.filterwarnings('ignore')
 
 
-class TrainingEngine:
+class Trainer:
     def __init__(self, cfg):
         self.cfg = cfg
         self.output_dir = get_output_dir(cfg.output_dir, cfg.name)
@@ -220,5 +220,5 @@ class TrainingEngine:
 
 
 def training(cfg):
-    engine = TrainingEngine(cfg)
+    engine = Trainer(cfg)
     engine.run()
