@@ -349,6 +349,7 @@ class AffineTransform(nn.Module):
         return rgb, tir, target
 
 
+# TODO:assert (boxes1[:, 2:] >= boxes1[:, :2]).all()
 def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int, img_h: int) -> torch.Tensor:
     """
     Apply affine transformation to boxes in normalized [x_min, y_min, x_max, y_max] format.
@@ -370,10 +371,10 @@ def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int,
 
     # Convert boxes to corner points
     points = torch.cat([
-        boxes_abs[:, :2].unsqueeze(1),  # top-left
-        torch.stack([boxes_abs[:, 2], boxes_abs[:, 1]], dim=1).unsqueeze(1),  # top-right
-        boxes_abs[:, 2:].unsqueeze(1),  # bottom-right
-        torch.stack([boxes_abs[:, 0], boxes_abs[:, 3]], dim=1).unsqueeze(1)  # bottom-left
+        boxes_abs[:, :2].unsqueeze(1),  # top-left (x1, y1)
+        torch.stack([boxes_abs[:, 2], boxes_abs[:, 1]], dim=1).unsqueeze(1),  # top-right (x2, y1)
+        boxes_abs[:, 2:].unsqueeze(1),  # bottom-right (x2, y2)
+        torch.stack([boxes_abs[:, 0], boxes_abs[:, 3]], dim=1).unsqueeze(1)  # bottom-left (x1, y2)
     ], dim=1)  # (N, 4, 2)
 
     # Add homogeneous coordinate
@@ -395,10 +396,19 @@ def apply_affine_to_boxes(boxes: torch.Tensor, matrix: torch.Tensor, img_w: int,
         new_y.max(dim=1).values,
     ], dim=1)  # (N, 4)
 
-    # Clamp and normalize
+    # 确保 x_min <= x_max 且 y_min <= y_max，过滤无效边界框
+    valid_mask = (new_boxes_abs[:, 2] > new_boxes_abs[:, 0]) & (new_boxes_abs[:, 3] > new_boxes_abs[:, 1])
+    new_boxes_abs = new_boxes_abs[valid_mask]
+
+    # Clamp to image bounds and normalize back to [0, 1]
     new_boxes_abs = new_boxes_abs.clamp(min=0)
+    new_boxes_abs[:, [0, 2]] = new_boxes_abs[:, [0, 2]].clamp(max=img_w)
+    new_boxes_abs[:, [1, 3]] = new_boxes_abs[:, [1, 3]].clamp(max=img_h)
+
     new_boxes = new_boxes_abs / torch.tensor([img_w, img_h, img_w, img_h], device=boxes.device)
-    return new_boxes.clamp(max=1.0)
+
+    return new_boxes.clamp(0.0, 1.0)
+
 
 
 class RandomErasing(nn.Module):

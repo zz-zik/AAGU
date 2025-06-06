@@ -63,9 +63,9 @@ def main():
         label_path = os.path.join(label_dir, base_name + ".txt")
 
         # 输出路径
-        out_rgb_path = os.path.join(output_dir, "RGB", f"{base_name}_jittered.png")
-        out_tir_path = os.path.join(output_dir, "TIR", f"{base_name}_jittered.png")
-        out_label_path = os.path.join(output_dir, "labels", f"{base_name}_jittered.txt")
+        out_rgb_path = os.path.join(output_dir, "RGB", f"{base_name}.png")
+        out_tir_path = os.path.join(output_dir, "TIR", f"{base_name}.png")
+        out_label_path = os.path.join(output_dir, "labels", f"{base_name}.txt")
 
         # 判断 label 是否为空或不存在
         if not os.path.exists(label_path) or os.path.getsize(label_path) == 0:

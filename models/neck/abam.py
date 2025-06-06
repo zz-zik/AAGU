@@ -340,3 +340,8 @@ if __name__ == "__main__":
     print(f"\n=== 模型信息 ===")
     print(f"单尺度ABAM总参数量: {total_params:,}")
     print(f"模型大小: {total_params * 4 / 1024 / 1024:.2f} MB")
+
+    # 多尺度
+    total_params = sum(p.numel() for p in multi_scale_model.parameters())
+    print(f"多尺度ABAM总参数量: {total_params:,}")
+    print(f"模型大小: {total_params * 4 / 1024 / 1024:.2f} MB")

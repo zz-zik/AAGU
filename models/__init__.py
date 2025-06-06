@@ -36,4 +36,17 @@ def build_model(cfg, training=False):
         use_target_guidance=cfg.criterion.abam.use_target_guidance
     )
 
+    # offset_losses = ABAMAlignmentLoss(
+    #         deformable_alignment_weight=3.0,
+    #         boundary_enhancement_weight=2.5,
+    #         complementary_fusion_weight=4.0,  # 最重要
+    #         fusion_quality_weight=4.5,       # IoU直接优化
+    #         alignment_confidence_weight=2.0,
+    #         modal_consistency_weight=1.5,
+    #         feature_coherence_weight=1.0,
+    #         alignment_threshold=0.65,
+    #         use_target_guidance=True,
+    #         temperature=3.0
+    # )
+
     return model, (losses, offset_losses)

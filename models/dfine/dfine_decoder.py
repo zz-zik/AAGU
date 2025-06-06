@@ -250,6 +250,7 @@ class TransformerDecoderLayer(nn.Module):
         # ffn
         target2 = self.forward_ffn(target)
         target = target + self.dropout4(target2)
+        # TODO: https://github.com/Peterande/D-FINE/issues/199
         target = self.norm3(target.clamp(min=-65504, max=65504))
 
         return target

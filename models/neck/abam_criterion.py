@@ -5,7 +5,7 @@
 @Time    : 2025/5/30
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
-@Desc    : 锚框注意力引导融合损失 - 加入目标信息引导 (修复设备问题)
+@Desc    : 锚框注意力引导融合损失 - 加入目标信息引导
 """
 import torch
 import torch.nn as nn

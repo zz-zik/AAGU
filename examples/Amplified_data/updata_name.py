@@ -89,7 +89,7 @@ def rename_files(root_dir, start_number):
 
 def main():
     # 选择根目录
-    root_dir = '/sxs/zhoufei/AAGU/dataset/OdinMJ3/'
+    root_dir = '/sxs/zhoufei/AAGU/dataset/OdinMJ4/'
 
     start_number = 31501
     # 执行重命名

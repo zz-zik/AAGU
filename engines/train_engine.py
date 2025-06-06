@@ -92,7 +92,7 @@ class TrainingEngine:
             self.logger.info('------------------------ Continue training ------------------------')
             checkpoint = torch.load(cfg.resume, map_location='cpu')
             self.model_without_ddp.load_state_dict(checkpoint['model'])
-            if not cfg.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+            if 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 if self.lr_scheduler is not None:
                     self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])

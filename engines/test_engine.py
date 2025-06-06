@@ -47,7 +47,7 @@ def tester(
             targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in target.items()}
                        for target in targets]
 
-            outputs = model(rgb_images, tir_images)
+            outputs, _ = model(rgb_images, tir_images)
 
             # 后处理输出
             if postprocessor is not None:

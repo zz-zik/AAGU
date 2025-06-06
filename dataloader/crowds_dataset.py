@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from torchvision import transforms
 
 SUPPORTED_IMAGE_FORMATS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp']
 
@@ -142,6 +143,7 @@ class Crowds(Dataset):
 
         self.img_list = self.sort_filenames_numerically(self.img_list)
         self.nSamples = len(self.img_list)
+        self.tensor = transforms.ToTensor()
         self.transform = transform
 
     def __len__(self):
@@ -158,11 +160,12 @@ class Crowds(Dataset):
         # Step 1: 使用 OpenCV 读取图像，并转为 RGB 格式
         rgb_img = cv2.imread(rgb_img_path)
         rgb_img = cv2.cvtColor(rgb_img, cv2.COLOR_BGR2RGB)
-        rgb_img = torch.from_numpy(rgb_img).permute(2, 0, 1).float() / 255.0
+        rgb_img = self.tensor(rgb_img)
+        # rgb_img = torch.from_numpy(rgb_img).permute(2, 0, 1).float() / 255.0
 
         tir_img = cv2.imread(tir_img_path)
         tir_img = cv2.cvtColor(tir_img, cv2.COLOR_BGR2RGB)
-        tir_img = torch.from_numpy(tir_img).permute(2, 0, 1).float() / 255.0
+        tir_img = self.tensor(tir_img)
 
         # Step 2: 读取标签
         target = {
