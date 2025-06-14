@@ -6,7 +6,7 @@ num_workers: 4
 resume: null  # null如果存在，则恢复训练
 
 data:
-  data_root: './dataset/OdinMJ4'
+  data_root: './dataset/OdinMJ'
   data_format: 'default'  # [default, custom]
   label_format: 'yolo'  # [yolo, coco]
   labels: ["People"]  # 类别列表, 默认从0开始

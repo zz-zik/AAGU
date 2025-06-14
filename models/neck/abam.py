@@ -1,14 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-修复ABAM模块中权重维度不匹配的问题
-主要问题：TFAM模块的weight_predictor输出维度不正确
+@Project : AAGU
+@FileName: abam.py
+@Time    : 2025/5/29 下午12:38
+@Author  : ZhouFei
+@Email   : zhoufei.net@gmail.com
+@Desc    : 锚框注意力引导融合模块
+@Usage   : 
 """
 import torch
 import torch.nn as nn
 
 
 class ChannelAttention(nn.Module):
-    """轻量级通道注意力模块"""
+    """通道注意力模块"""
 
     def __init__(self, in_channels, reduction=16):
         super(ChannelAttention, self).__init__()
@@ -28,7 +33,7 @@ class ChannelAttention(nn.Module):
 
 
 class SpatialAttention(nn.Module):
-    """轻量级空间注意力模块"""
+    """空间注意力模块"""
 
     def __init__(self):
         super(SpatialAttention, self).__init__()
@@ -43,7 +48,7 @@ class SpatialAttention(nn.Module):
 
 
 class TFAM(nn.Module):
-    """修复后的轻量级时序融合注意力模块（TFAM）"""
+    """时序融合注意力模块（TFAM）"""
 
     def __init__(self, in_channels):
         super(TFAM, self).__init__()
@@ -64,35 +69,24 @@ class TFAM(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        # 轻量级注意力
+        # 注意力
         self.channel_attention = ChannelAttention(in_channels, reduction=16)
         self.spatial_attention = SpatialAttention()
 
-        # ====== 修复：改进的融合权重学习 ======
-        # 问题：原来的weight_predictor使用AdaptiveAvgPool2d(1)，导致输出维度变成[B, 2, 1, 1]
-
-        # 方案1：使用卷积层保持空间维度（推荐）
+        # 使用卷积层保持空间维度
         self.weight_predictor = nn.Sequential(
-            nn.Conv2d(in_channels, 16, 1, bias=False),  # 先降维
+            nn.Conv2d(in_channels, 16, 1, bias=False),
             nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
-            nn.Conv2d(16, 2, 1, bias=False),  # 输出2个通道分别表示rgb和tir权重
-            nn.Softmax(dim=1)  # 在通道维度上进行softmax，确保权重和为1
+            nn.Conv2d(16, 2, 1, bias=False),
+            nn.Softmax(dim=1)
         )
-
-        # 方案2：保持全局权重但扩展到空间维度（备选）
-        # self.weight_predictor = nn.Sequential(
-        #     nn.AdaptiveAvgPool2d(1),
-        #     nn.Conv2d(in_channels, 2, 1),
-        #     nn.Softmax(dim=1)
-        # )
 
     def forward(self, rgb_feat, tir_feat):
         # 特征变换
         rgb_transformed = self.rgb_transform(rgb_feat)
         tir_transformed = self.tir_transform(tir_feat)
 
-        # ====== 修复：权重预测保持空间维度 ======
         # 输入融合特征用于权重预测
         fusion_input = rgb_transformed + tir_transformed  # [B, C, H, W]
         fusion_weights = self.weight_predictor(fusion_input)  # [B, 2, H, W]
@@ -100,11 +94,6 @@ class TFAM(nn.Module):
         # 分离rgb和tir权重，现在维度是[B, 1, H, W]
         rgb_weight = fusion_weights[:, 0:1, :, :]  # [B, 1, H, W]
         tir_weight = fusion_weights[:, 1:2, :, :]  # [B, 1, H, W]
-
-        # 方案2的处理方式（如果使用全局权重）：
-        # fusion_weights = self.weight_predictor(fusion_input)  # [B, 2, 1, 1]
-        # rgb_weight = fusion_weights[:, 0:1, :, :].expand(-1, -1, H, W)  # 扩展到[B, 1, H, W]
-        # tir_weight = fusion_weights[:, 1:2, :, :].expand(-1, -1, H, W)  # 扩展到[B, 1, H, W]
 
         # 加权融合
         fused_feat = rgb_transformed * rgb_weight + tir_transformed * tir_weight
@@ -117,7 +106,7 @@ class TFAM(nn.Module):
 
 
 class AnchorBoxAlignment(nn.Module):
-    """轻量级锚框对齐模块"""
+    """锚框对齐模块"""
 
     def __init__(self, in_channels, num_anchors=9, align_thres=0.5):
         super(AnchorBoxAlignment, self).__init__()
@@ -130,10 +119,10 @@ class AnchorBoxAlignment(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-        # 轻量级偏移量预测
+        # 偏移量预测
         self.offset_predictor = nn.Conv2d(in_channels // 2, num_anchors * 2, 1)
 
-        # 轻量级置信度预测
+        # 置信度预测
         self.confidence_predictor = nn.Sequential(
             nn.Conv2d(in_channels // 2, num_anchors * 2, 1),
             nn.Sigmoid()
@@ -168,7 +157,7 @@ class AnchorBoxAlignment(nn.Module):
 
 
 class ABAM(nn.Module):
-    """修复后的轻量级锚框注意力引导融合模块"""
+    """修复后的锚框注意力引导融合模块"""
 
     def __init__(self, in_channels, num_anchors=9, align_thres=0.5):
         super(ABAM, self).__init__()
@@ -250,7 +239,7 @@ class ABAM(nn.Module):
 
 
 class MultiScaleABAM(nn.Module):
-    """轻量级多尺度ABAM网络"""
+    """多尺度ABAM网络"""
 
     def __init__(self, in_channels_list=[512, 1024, 2048], num_anchors=9, align_thres=0.5):
         super(MultiScaleABAM, self).__init__()
@@ -281,18 +270,12 @@ class MultiScaleABAM(nn.Module):
         return fused_feats, align_infos
 
 
-# 测试修复后的代码
+# 测试
 if __name__ == "__main__":
-    print("=== 测试修复后的ABAM模块 ===")
-
-    # 创建模型
     model = ABAM(in_channels=512, num_anchors=9)
-
-    # 创建测试数据
-    rgb_feat = torch.randn(2, 512, 64, 80)  # 增加batch_size测试
+    rgb_feat = torch.randn(2, 512, 64, 80)
     tir_feat = torch.randn(2, 512, 64, 80)
 
-    # 前向传播
     with torch.no_grad():
         fused_feat, alignment_info = model(rgb_feat, tir_feat)
 
@@ -302,8 +285,8 @@ if __name__ == "__main__":
     print(f"对齐比例: {alignment_info['alignment_ratio']:.3f}")
     print(f"偏移量形状: {alignment_info['offsets'].shape}")
     print(f"置信度形状: {alignment_info['confidences'].shape}")
-    print(f"修复后 rgb_weight 形状: {alignment_info['rgb_weight'].shape}")  # 应该是 [2, 1, 64, 80]
-    print(f"修复后 tir_weight 形状: {alignment_info['tir_weight'].shape}")  # 应该是 [2, 1, 64, 80]
+    print(f"rgb_weight 形状: {alignment_info['rgb_weight'].shape}")
+    print(f"tir_weight 形状: {alignment_info['tir_weight'].shape}")
 
     # 验证权重和为1
     weight_sum = alignment_info['rgb_weight'] + alignment_info['tir_weight']

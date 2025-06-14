@@ -23,14 +23,14 @@ from typing import Dict, List, Tuple, Optional
 
 
 class DeformableAlign(nn.Module):
-    """轻量级可变形对齐模块"""
+    """可变形对齐模块"""
 
     def __init__(self, in_channels, reduction=4):
         super(DeformableAlign, self).__init__()
         self.in_channels = in_channels
         hidden_dim = in_channels // reduction
 
-        # 简化的偏移预测 - 使用深度可分离卷积
+        # 偏移预测 - 使用深度可分离卷积
         self.offset_pred = nn.Sequential(
             # 深度卷积
             nn.Conv2d(in_channels * 2, in_channels * 2, 3, padding=1, groups=in_channels * 2),
@@ -40,7 +40,7 @@ class DeformableAlign(nn.Module):
             nn.Conv2d(hidden_dim, 18, 1)  # 9个锚点 * 2个坐标
         )
 
-        # 轻量级特征调制
+        # 特征调制
         self.modulation = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(in_channels * 2, hidden_dim, 1),
@@ -76,7 +76,7 @@ class DeformableAlign(nn.Module):
         # 全局调制权重
         modulation_weight = self.modulation(concat_feat)  # [B, C, 1, 1]
 
-        # 简化的网格采样对齐
+        # 网格采样对齐
         rgb_aligned = self._simple_grid_sample(rgb_feat, offsets[:, :4])  # 使用前4个锚点
         tir_aligned = self._simple_grid_sample(tir_feat, offsets[:, 4:8])  # 使用中间4个锚点
 
@@ -91,7 +91,7 @@ class DeformableAlign(nn.Module):
         return rgb_aligned, tir_aligned, alignment_quality
 
     def _simple_grid_sample(self, feat, offsets):
-        """简化的网格采样"""
+        """网格采样"""
         B, C, H, W = feat.shape
         N = offsets.shape[1]  # 锚点数量
 
@@ -119,13 +119,13 @@ class DeformableAlign(nn.Module):
 
 
 class EfficientBoundaryAttention(nn.Module):
-    """高效边界注意力模块"""
+    """边界注意力模块"""
 
     def __init__(self, in_channels, reduction=8):
         super(EfficientBoundaryAttention, self).__init__()
         hidden_dim = max(in_channels // reduction, 16)
 
-        # 轻量级边界检测
+        # 边界检测
         self.boundary_detector = nn.Sequential(
             nn.Conv2d(in_channels, hidden_dim, 3, padding=1, groups=min(in_channels, 8)),
             nn.BatchNorm2d(hidden_dim),
@@ -134,7 +134,7 @@ class EfficientBoundaryAttention(nn.Module):
             nn.Sigmoid()
         )
 
-        # 简化的注意力生成
+        # 注意力生成
         self.attention_gen = nn.Sequential(
             nn.AdaptiveAvgPool2d(8),  # 降低分辨率
             nn.Conv2d(in_channels, hidden_dim, 1),
@@ -165,7 +165,7 @@ class EfficientBoundaryAttention(nn.Module):
 
 
 class ComplementaryFusion(nn.Module):
-    """轻量级互补融合模块"""
+    """互补融合模块"""
 
     def __init__(self, in_channels, reduction=4):
         super(ComplementaryFusion, self).__init__()
@@ -180,7 +180,7 @@ class ComplementaryFusion(nn.Module):
             nn.Softmax(dim=1)
         )
 
-        # 轻量级特征增强
+        # 特征增强
         self.feature_enhancer = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, 3, padding=1, groups=in_channels),
             nn.Conv2d(in_channels, in_channels, 1),
@@ -214,7 +214,7 @@ class ComplementaryFusion(nn.Module):
 
 
 class ABAM(nn.Module):
-    """轻量化ABAM模块"""
+    """ABAM模块"""
 
     def __init__(self, in_channels, num_anchors=9, align_thres=0.6, reduction=4):
         super(ABAM, self).__init__()
@@ -222,16 +222,16 @@ class ABAM(nn.Module):
         self.num_anchors = num_anchors
         self.align_thres = align_thres
 
-        # 1. 轻量级可变形对齐
+        # 可变形对齐
         self.deformable_alignment = DeformableAlign(in_channels, reduction)
 
-        # 2. 高效边界注意力
+        # 边界注意力
         self.boundary_attention = EfficientBoundaryAttention(in_channels, reduction * 2)
 
-        # 3. 轻量级互补融合
+        # 互补融合
         self.complementary_fusion = ComplementaryFusion(in_channels, reduction)
 
-        # 4. 简化的锚框回归
+        # 锚框回归
         hidden_dim = in_channels // reduction
         self.anchor_regressor = nn.Sequential(
             nn.AdaptiveAvgPool2d(4),  # 降低分辨率
@@ -240,7 +240,7 @@ class ABAM(nn.Module):
             nn.Conv2d(hidden_dim, num_anchors * 2, 1)  # 只预测x,y偏移
         )
 
-        # 5. 对齐置信度
+        # 对齐置信度
         self.confidence_pred = nn.Sequential(
             nn.Conv2d(in_channels, hidden_dim, 1),
             nn.ReLU(inplace=True),
@@ -248,7 +248,7 @@ class ABAM(nn.Module):
             nn.Sigmoid()
         )
 
-        # 6. 最终输出调整
+        # 最终输出调整
         self.output_adjust = nn.Conv2d(in_channels, in_channels, 1)
 
         # 可学习的融合权重
@@ -265,43 +265,37 @@ class ABAM(nn.Module):
         """
         B, C, H, W = rgb_feat.shape
 
-        # Stage 1: 可变形对齐
+        # 可变形对齐
         rgb_aligned, tir_aligned, align_quality = self.deformable_alignment(rgb_feat, tir_feat)
 
-        # Stage 2: 边界增强（只对融合后的特征进行）
+        # 边界增强（只对融合后的特征进行）
         fused_temp = (rgb_aligned + tir_aligned) * 0.5
         boundary_enhanced, boundary_map = self.boundary_attention(fused_temp)
 
-        # Stage 3: 互补融合
+        # 互补融合
         complementary_fused, fusion_weights = self.complementary_fusion(rgb_aligned, tir_aligned)
 
-        # Stage 4: 特征融合
+        # 特征融合
         enhanced_feat = self.fusion_weight * boundary_enhanced + (1 - self.fusion_weight) * complementary_fused
         enhanced_feat = self.output_adjust(enhanced_feat)
 
-        # Stage 5: 锚框和置信度预测
+        # 锚框和置信度预测
         anchor_offsets = self.anchor_regressor(enhanced_feat)  # [B, num_anchors*2, 4, 4]
         anchor_offsets = F.interpolate(anchor_offsets, size=(H, W), mode='bilinear', align_corners=False)
         anchor_offsets = anchor_offsets.view(B, self.num_anchors, 2, H, W)
 
         confidence = self.confidence_pred(enhanced_feat)  # [B, 1, H, W]
 
-        # 构建轻量级对齐信息
         alignment_info = {
-            # 核心信息
             'rgb_weight': fusion_weights[:, 0:1],
             'tir_weight': fusion_weights[:, 1:2],
             'alignment_quality': align_quality,
             'boundary_map': boundary_map,
             'confidence': confidence,
-
-            # 兼容原接口
             'offsets': anchor_offsets,
             'confidences': confidence.unsqueeze(2).expand(-1, self.num_anchors, 2, -1, -1),
             'alignment_mask': (confidence > self.align_thres).float(),
             'alignment_ratio': torch.mean((confidence > self.align_thres).float()).item(),
-
-            # 统计信息
             'overall_alignment_score': torch.mean(align_quality).item(),
             'fusion_balance': torch.std(fusion_weights).item(),
         }
@@ -327,7 +321,7 @@ class AdaptiveABAM(nn.Module):
             nn.Sigmoid()
         )
 
-        # 可选的增强模块（仅在需要时使用）
+        # 可选的增强模块
         self.enhanced_processor = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, 3, padding=1, groups=in_channels),
             nn.Conv2d(in_channels, in_channels, 1),
@@ -370,7 +364,7 @@ class MultiScaleABAM(nn.Module):
             for in_channels in in_channels_list
         ])
 
-        # 轻量级跨尺度连接
+        # 跨尺度连接
         self.cross_scale_adapters = nn.ModuleList()
         for i in range(len(in_channels_list) - 1):
             adapter = nn.Conv2d(in_channels_list[i], in_channels_list[i + 1], 1)

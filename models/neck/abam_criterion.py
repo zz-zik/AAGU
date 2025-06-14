@@ -38,13 +38,11 @@ def create_target_mask(targets: List[Dict], feature_sizes: List[Tuple[int, int]]
                        device: torch.device, image_size: Tuple[int, int] = (640, 512)) -> List[torch.Tensor]:
     """
     根据目标信息创建目标区域掩码
-
     Args:
         targets: 目标信息列表，每个元素包含boxes和labels
         feature_sizes: 特征图尺寸列表 [(H1,W1), (H2,W2), ...]
         device: 目标设备
         image_size: 原始图像尺寸 (H, W)
-
     Returns:
         target_masks: 各尺度的目标掩码列表
     """
@@ -58,7 +56,7 @@ def create_target_mask(targets: List[Dict], feature_sizes: List[Tuple[int, int]]
         for batch_idx in range(batch_size):
             target = targets[batch_idx]
 
-            # ====== 处理没有目标的情况 ======
+            # 特殊处理没有目标的情况
             boxes = target.get('boxes')
             labels = target.get('labels')
 
@@ -107,8 +105,8 @@ class ABAMAlignmentLoss(nn.Module):
                  alignment_weight=2.0,
                  balance_weight=0.3,
                  smoothness_weight=0.2,
-                 target_guided_weight=1.5,  # 新增：目标引导权重
-                 class_aware_weight=0.5,  # 新增：类别感知权重
+                 target_guided_weight=1.5,
+                 class_aware_weight=0.5,
                  target_alignment_ratio=0.8,
                  modality_bias=0.7,
                  use_target_guidance=True):
@@ -157,7 +155,7 @@ class ABAMAlignmentLoss(nn.Module):
         return torch.device('cpu')
 
     def preprocess_targets(self, targets: List[Dict], device: torch.device) -> List[Dict]:
-        """预处理targets，确保所有张量都在正确的设备上"""
+        """预处理targets"""
         processed_targets = []
 
         for target in targets:
@@ -191,7 +189,6 @@ class ABAMAlignmentLoss(nn.Module):
         Args:
             align_infos: ABAM模块输出的对齐信息列表
             targets: 目标信息列表，包含boxes和labels (可选)
-
         Returns:
             total_loss: 总损失
             loss_dict: 各项损失详情
@@ -231,7 +228,7 @@ class ABAMAlignmentLoss(nn.Module):
             rgb_weight = align_info['rgb_weight']  # [B, 1, H, W]
             tir_weight = align_info['tir_weight']  # [B, 1, H, W]
 
-            # Convert alignment_mask to float if it's boolean
+            # 如果 alignment_mask 是布尔值，则将其转换为 float
             if alignment_mask.dtype == torch.bool:
                 alignment_mask = alignment_mask.float()
 
@@ -240,7 +237,7 @@ class ABAMAlignmentLoss(nn.Module):
             if target_masks is not None:
                 current_target_mask = target_masks[scale_idx]  # [B, H, W]
 
-            # 1. 目标引导的偏移量损失
+            # Top1:目标引导的偏移量损失
             offset_magnitude = torch.sqrt(offsets[:, :, 0, :, :] ** 2 + offsets[:, :, 1, :, :] ** 2)
 
             if current_target_mask is not None:
@@ -265,7 +262,7 @@ class ABAMAlignmentLoss(nn.Module):
 
             offset_loss_total += offset_loss
 
-            # 2. 目标引导的置信度损失
+            # Top2:目标引导的置信度损失
             rgb_conf = confidences[:, :, 0, :, :]  # [B, num_anchors, H, W]
             tir_conf = confidences[:, :, 1, :, :]  # [B, num_anchors, H, W]
 
@@ -305,7 +302,7 @@ class ABAMAlignmentLoss(nn.Module):
 
             confidence_loss_total += confidence_loss
 
-            # 3. 目标引导的对齐损失
+            # Top3: 目标引导的对齐损失
             if current_target_mask is not None:
                 # 目标区域应该有更高的对齐率
                 target_alignment_mask = alignment_mask * current_target_mask.unsqueeze(1)
@@ -345,7 +342,7 @@ class ABAMAlignmentLoss(nn.Module):
 
             alignment_loss_total += alignment_loss
 
-            # 4. 类别感知的权重平衡损失
+            # Top4: 类别感知的权重平衡损失
             if current_target_mask is not None and processed_targets is not None:
                 # 根据目标类别调整权重期望
                 class_aware_loss = 0.0
@@ -387,7 +384,7 @@ class ABAMAlignmentLoss(nn.Module):
 
                 class_aware_loss_total += class_aware_loss
 
-            # 5. 原始模态权重平衡损失
+            # Top5: 原始模态权重平衡损失
             target_tir_weight_tensor = torch.ones_like(tir_weight) * self.target_tir_weight
             target_rgb_weight_tensor = torch.ones_like(rgb_weight) * self.target_rgb_weight
 
@@ -405,7 +402,7 @@ class ABAMAlignmentLoss(nn.Module):
 
             balance_loss_total += weight_balance_loss
 
-            # 6. 空间平滑损失
+            # Top6: 空间平滑损失
             alignment_mask_mean = torch.mean(alignment_mask, dim=1, keepdim=True)  # [B, 1, H, W]
 
             grad_h = torch.abs(alignment_mask_mean[:, :, :-1, :] - alignment_mask_mean[:, :, 1:, :])
@@ -466,15 +463,12 @@ class ABAMAlignmentLoss(nn.Module):
         return total_loss, loss_dict
 
 
-# 使用示例
+# 测试示例
 if __name__ == "__main__":
-    """使用示例"""
-
-    # 创建模拟数据
     batch_size = 2
     num_anchors = 9
 
-    # 模拟目标信息（包含空目标的情况）
+    # 模拟目标信息
     targets = [
         {
             "boxes": torch.tensor([[0.1, 0.1, 0.3, 0.3], [0.5, 0.5, 0.7, 0.7]]),  # 归一化坐标
@@ -487,7 +481,7 @@ if __name__ == "__main__":
         }
     ]
 
-    # 额外测试：显式的空目标
+    # 空目标第二次测试
     targets_with_empty = [
         {
             "boxes": torch.tensor([[0.2, 0.2, 0.4, 0.4]]),

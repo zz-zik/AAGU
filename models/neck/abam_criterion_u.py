@@ -5,7 +5,7 @@
 @Time    : 2025/6/4
 @Author  : ZhouFei
 @Email   : zhoufei.net@gmail.com
-@Desc    : 针对增强ABAM模型的RGB-TIR融合损失 - 专注于IoU提升
+@Desc    : 针对增强ABAM模型的RGB-TIR融合损失
 """
 
 import torch
@@ -132,17 +132,16 @@ def create_target_mask(targets: List[Dict], feature_sizes: List[Tuple[int, int]]
 
 
 class ABAMAlignmentLoss(nn.Module):
-    """针对轻量级ABAM模型的专注IoU提升的融合损失函数"""
 
     def __init__(self,
-                 # 核心融合损失权重 - 重新设计权重比例
-                 deformable_alignment_weight=3.0,  # 可变形对齐损失 (提升)
-                 boundary_enhancement_weight=2.5,  # 边界增强损失 (对应新模型)
-                 complementary_fusion_weight=3.5,  # 互补融合损失 (最重要)
+                 # 核心融合损失权重
+                 deformable_alignment_weight=3.0,  # 可变形对齐损失
+                 boundary_enhancement_weight=2.5,  # 边界增强损失
+                 complementary_fusion_weight=3.5,  # 互补融合损失
 
                  # IoU直接优化权重
-                 fusion_quality_weight=4.0,  # 融合质量损失 (大幅提升)
-                 alignment_confidence_weight=2.0,  # 对齐置信度损失 (新增)
+                 fusion_quality_weight=4.0,  # 融合质量损失
+                 alignment_confidence_weight=2.0,  # 对齐置信度损失
 
                  # 跨模态一致性权重
                  modal_consistency_weight=1.5,  # 模态一致性损失
@@ -184,7 +183,7 @@ class ABAMAlignmentLoss(nn.Module):
         self.bce_loss = nn.BCEWithLogitsLoss(reduction='none')
 
     def compute_deformable_alignment_loss(self, alignment_info, target_mask=None):
-        """计算可变形对齐损失 - 基于新的ABAM模型"""
+        """计算可变形对齐损失"""
         alignment_quality = alignment_info['alignment_quality']  # [B, 1, H, W]
 
         if target_mask is not None:
@@ -212,22 +211,22 @@ class ABAMAlignmentLoss(nn.Module):
             return F.mse_loss(alignment_quality, target_quality)
 
     def compute_boundary_enhancement_loss(self, alignment_info, target_mask=None):
-        """计算边界增强损失 - 对应新模型的边界注意力模块"""
+        """计算边界增强损失"""
         boundary_map = alignment_info['boundary_map']  # [B, 1, H, W]
 
-        # 1. 边界清晰度损失 - 边界应该清晰
+        # 边界清晰度损失
         boundary_clarity_loss = -torch.mean(
             boundary_map * torch.log(boundary_map + 1e-8) +
             (1 - boundary_map) * torch.log(1 - boundary_map + 1e-8)
         )
 
-        # 2. 边界强度损失 - 鼓励强边界响应
+        # 边界强度损失
         boundary_strength_loss = F.mse_loss(
             boundary_map.mean(),
             torch.tensor(0.4, device=boundary_map.device)  # 期望40%的区域有边界
         )
 
-        # 3. 目标边界增强
+        # 目标边界增强
         if target_mask is not None:
             # 计算目标边界
             target_edges = self._compute_edge_map(target_mask)
@@ -243,16 +242,15 @@ class ABAMAlignmentLoss(nn.Module):
         return boundary_clarity_loss + boundary_strength_loss
 
     def compute_complementary_fusion_loss(self, alignment_info, target_mask=None):
-        """计算互补融合损失 - 核心损失函数"""
+        """计算互补融合损失"""
         rgb_weight = alignment_info['rgb_weight']  # [B, 1, H, W]
         tir_weight = alignment_info['tir_weight']  # [B, 1, H, W]
 
-        # 1. 权重归一化损失 - 确保权重和为1
+        # 权重归一化损失
         weight_sum = rgb_weight + tir_weight
         normalization_loss = F.mse_loss(weight_sum, torch.ones_like(weight_sum))
 
-        # 2. 模态平衡损失 - 避免单一模态主导
-        # 计算全局平均权重
+        # 模态平衡损失
         rgb_global_avg = torch.mean(rgb_weight)
         tir_global_avg = torch.mean(tir_weight)
 
@@ -260,7 +258,7 @@ class ABAMAlignmentLoss(nn.Module):
         balance_loss = F.relu(torch.abs(rgb_global_avg - 0.5) - 0.2) + \
                        F.relu(torch.abs(tir_global_avg - 0.5) - 0.2)
 
-        # 3. 融合多样性损失 - 鼓励空间上的权重变化
+        # 融合多样性损失
         def compute_spatial_diversity(weight_map):
             # 计算权重的空间标准差
             spatial_std = torch.std(weight_map.view(weight_map.shape[0], -1), dim=1)
@@ -268,7 +266,7 @@ class ABAMAlignmentLoss(nn.Module):
 
         diversity_loss = -(compute_spatial_diversity(rgb_weight) + compute_spatial_diversity(tir_weight))
 
-        # 4. 目标区域的优化融合
+        # 目标区域的优化融合
         if target_mask is not None:
             target_mask_expanded = target_mask.unsqueeze(1)
 
@@ -287,13 +285,12 @@ class ABAMAlignmentLoss(nn.Module):
         return normalization_loss + balance_loss + 0.5 * diversity_loss
 
     def compute_fusion_quality_loss(self, alignment_info, target_mask=None):
-        """计算融合质量损失 - 直接优化IoU相关指标"""
+        """计算融合质量损失"""
         alignment_quality = alignment_info['alignment_quality']  # [B, 1, H, W]
         boundary_map = alignment_info['boundary_map']  # [B, 1, H, W]
         rgb_weight = alignment_info['rgb_weight']  # [B, 1, H, W]
         tir_weight = alignment_info['tir_weight']  # [B, 1, H, W]
 
-        # 1. 整体融合质量损失
         # 高质量融合应该在边界区域有更好的对齐
         boundary_alignment_quality = alignment_quality * boundary_map
         quality_loss = F.mse_loss(
@@ -301,8 +298,7 @@ class ABAMAlignmentLoss(nn.Module):
             torch.tensor(0.7, device=alignment_quality.device)
         )
 
-        # 2. 融合一致性损失
-        # RGB和TIR权重应该与对齐质量相关
+        # 融合一致性损失
         weight_quality_consistency = F.mse_loss(
             rgb_weight * alignment_quality,
             rgb_weight * 0.8
@@ -311,7 +307,7 @@ class ABAMAlignmentLoss(nn.Module):
             tir_weight * 0.8
         )
 
-        # 3. 目标区域融合优化
+        # 目标区域融合优化
         if target_mask is not None:
             target_mask_expanded = target_mask.unsqueeze(1)
 
@@ -334,26 +330,24 @@ class ABAMAlignmentLoss(nn.Module):
         return quality_loss + weight_quality_consistency
 
     def compute_alignment_confidence_loss(self, alignment_info, target_mask=None):
-        """计算对齐置信度损失 - 新的损失组件"""
+        """计算对齐置信度损失"""
         confidence = alignment_info['confidence']  # [B, 1, H, W]
 
-        # 1. 置信度分布损失
-        # 期望大部分区域有中等到高等的置信度
+        # 置信度分布损失
         confidence_target = torch.ones_like(confidence) * self.alignment_threshold
         confidence_loss = F.mse_loss(confidence, confidence_target)
 
-        # 2. 置信度与对齐质量一致性
+        # 置信度与对齐质量一致性
         alignment_quality = alignment_info['alignment_quality']
         consistency_loss = F.mse_loss(confidence, alignment_quality)
 
-        # 3. 目标区域置信度增强
+        # 目标区域置信度增强
         if target_mask is not None:
             target_mask_expanded = target_mask.unsqueeze(1)
 
-            # 目标区域应该有更高的置信度
             target_confidence_loss = F.mse_loss(
                 confidence * target_mask_expanded,
-                target_mask_expanded * 0.8  # 目标区域期望80%的置信度
+                target_mask_expanded * 0.8
             )
 
             return confidence_loss + consistency_loss + target_confidence_loss
@@ -365,10 +359,10 @@ class ABAMAlignmentLoss(nn.Module):
         rgb_weight = alignment_info['rgb_weight']
         tir_weight = alignment_info['tir_weight']
 
-        # 1. 权重互补性
+        # 权重互补性
         complementary_loss = F.mse_loss(rgb_weight + tir_weight, torch.ones_like(rgb_weight))
 
-        # 2. 空间连贯性 - 相邻区域权重变化应该平滑
+        # 空间连贯性
         def spatial_smoothness_loss(weight_map):
             diff_h = torch.abs(weight_map[:, :, 1:, :] - weight_map[:, :, :-1, :])
             diff_w = torch.abs(weight_map[:, :, :, 1:] - weight_map[:, :, :, :-1])
@@ -376,7 +370,7 @@ class ABAMAlignmentLoss(nn.Module):
 
         smoothness_loss = spatial_smoothness_loss(rgb_weight) + spatial_smoothness_loss(tir_weight)
 
-        # 3. 全局模态平衡
+        # 全局模态平衡
         global_balance_loss = torch.abs(torch.mean(rgb_weight) - torch.mean(tir_weight))
 
         return complementary_loss + 0.2 * smoothness_loss + 0.3 * global_balance_loss
@@ -386,13 +380,13 @@ class ABAMAlignmentLoss(nn.Module):
         alignment_quality = alignment_info['alignment_quality']
         boundary_map = alignment_info['boundary_map']
 
-        # 1. 对齐质量与边界的相关性
+        # 对齐质量与边界的相关性
         boundary_alignment_coherence = F.mse_loss(
             alignment_quality * boundary_map,
             boundary_map * 0.75  # 边界处期望较高的对齐质量
         )
 
-        # 2. 特征一致性
+        # 特征一致性
         rgb_weight = alignment_info['rgb_weight']
         tir_weight = alignment_info['tir_weight']
 
@@ -442,8 +436,6 @@ class ABAMAlignmentLoss(nn.Module):
 
     def forward(self, align_infos, targets=None):
         """
-        前向传播计算损失
-
         Args:
             align_infos: ABAM模块输出的对齐信息列表
             targets: 目标信息列表（可选）
@@ -482,7 +474,6 @@ class ABAMAlignmentLoss(nn.Module):
 
             target_masks = create_target_mask(processed_targets, feature_sizes, device)
 
-        # 各项损失累积器
         losses = {
             'deformable_alignment_loss': 0.0,
             'boundary_enhancement_loss': 0.0,
@@ -505,31 +496,31 @@ class ABAMAlignmentLoss(nn.Module):
                 print(f"Warning: Missing keys in alignment_info: {missing_keys}")
                 continue
 
-            # 1. 可变形对齐损失
+            # 可变形对齐损失
             deform_loss = self.compute_deformable_alignment_loss(align_info, current_target_mask)
             losses['deformable_alignment_loss'] += deform_loss
 
-            # 2. 边界增强损失
+            # 边界增强损失
             boundary_loss = self.compute_boundary_enhancement_loss(align_info, current_target_mask)
             losses['boundary_enhancement_loss'] += boundary_loss
 
-            # 3. 互补融合损失 (核心)
+            # 互补融合损失
             fusion_loss = self.compute_complementary_fusion_loss(align_info, current_target_mask)
             losses['complementary_fusion_loss'] += fusion_loss
 
-            # 4. 融合质量损失 (IoU优化核心)
+            # 融合质量损失
             quality_loss = self.compute_fusion_quality_loss(align_info, current_target_mask)
             losses['fusion_quality_loss'] += quality_loss
 
-            # 5. 对齐置信度损失
+            # 对齐置信度损失
             confidence_loss = self.compute_alignment_confidence_loss(align_info, current_target_mask)
             losses['alignment_confidence_loss'] += confidence_loss
 
-            # 6. 模态一致性损失
+            # 模态一致性损失
             consistency_loss = self.compute_modal_consistency_loss(align_info)
             losses['modal_consistency_loss'] += consistency_loss
 
-            # 7. 特征连贯性损失
+            # 特征连贯性损失
             coherence_loss = self.compute_feature_coherence_loss(align_info)
             losses['feature_coherence_loss'] += coherence_loss
 
@@ -538,7 +529,7 @@ class ABAMAlignmentLoss(nn.Module):
             if num_scales > 0:
                 losses[key] /= num_scales
 
-        # 加权组合总损失 - 重点优化IoU
+        # 加权组合总损失
         total_loss = (
                 self.deformable_alignment_weight * losses['deformable_alignment_loss'] +
                 self.boundary_enhancement_weight * losses['boundary_enhancement_loss'] +
@@ -574,19 +565,19 @@ class ABAMAlignmentLoss(nn.Module):
 
         return total_loss, loss_dict
 
-# 使用示例和测试代码
+
+# 示例
 if __name__ == "__main__":
     import torch
     from models.neck.abam_utral import ABAM, MultiScaleABAM
 
     print("=== ABAMFusionLoss 完整测试 ===")
 
-    # 创建损失函数实例
     criterion = ABAMAlignmentLoss(
             deformable_alignment_weight=3.0,
             boundary_enhancement_weight=2.5,
-            complementary_fusion_weight=4.0,  # 最重要
-            fusion_quality_weight=4.5,       # IoU直接优化
+            complementary_fusion_weight=4.0,
+            fusion_quality_weight=4.5,
             alignment_confidence_weight=2.0,
             modal_consistency_weight=1.5,
             feature_coherence_weight=1.0,
@@ -594,16 +585,14 @@ if __name__ == "__main__":
             use_target_guidance=True,
             temperature=3.0
     )
-    # 创建单尺度输入
+
     model_single = ABAM(in_channels=512)
     rgb_feat_single = torch.randn(2, 512, 64, 80)
     tir_feat_single = torch.randn(2, 512, 64, 80)
 
-    # 前向传播获取对齐信息
     with torch.no_grad():
         feat_single, align_info_single = model_single(rgb_feat_single, tir_feat_single)
 
-    # 构建模拟目标数据
     targets = [
         {
             "boxes": torch.tensor([[0.1, 0.1, 0.3, 0.3], [0.5, 0.5, 0.7, 0.7]]),
@@ -615,14 +604,12 @@ if __name__ == "__main__":
         }
     ]
 
-    # 单尺度损失计算
     loss_single, loss_dict_single = criterion([align_info_single], targets)
 
     print("\n=== 单尺度损失结果 ===")
     for k, v in loss_dict_single.items():
         print(f"{k}: {v:.4f}")
 
-    # 多尺度测试
     multi_model = MultiScaleABAM()
     rgb_feats_multi = [
         torch.randn(2, 512, 64, 80),
@@ -635,11 +622,9 @@ if __name__ == "__main__":
         torch.randn(2, 2048, 16, 20),
     ]
 
-    # 前向传播获取多尺度对齐信息
     with torch.no_grad():
         feats_multi, align_infos_multi = multi_model(rgb_feats_multi, tir_feats_multi)
 
-    # 多尺度损失计算
     loss_multi, loss_dict_multi = criterion(align_infos_multi, targets)
 
     print("\n=== 多尺度损失结果 ===")
